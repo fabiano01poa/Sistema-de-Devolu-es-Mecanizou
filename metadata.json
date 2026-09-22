@@ -1,0 +1,10 @@
+{
+  "name": "Remix Consulta de Devolucoes",
+  "description": "Sistema de consulta e filtragem de itens de estoque e devoluções integrado com Google Sheets e visualização detalhada em estilo card escuro.",
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

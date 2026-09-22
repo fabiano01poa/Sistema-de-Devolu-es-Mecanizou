@@ -1,0 +1,275 @@
+@import "tailwindcss";
+
+:root {
+  color-scheme: dark;
+}
+
+html.dark {
+  color-scheme: dark;
+}
+
+html.light {
+  color-scheme: light;
+}
+
+/* Custom Scrollbars in soft light blue */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: rgba(15, 23, 42, 0.6);
+  border-radius: 4px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(56, 189, 248, 0.4);
+  border-radius: 4px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(56, 189, 248, 0.7);
+}
+
+html.light .custom-scrollbar::-webkit-scrollbar-track {
+  background: #f0f9ff;
+}
+html.light .custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #7dd3fc;
+}
+
+/* ==========================================================================
+   LIGHT MODE OVERRIDES - TONS DE AZUL CLARO E ALTA LEGIBILIDADE
+   ========================================================================== */
+
+html.light body,
+html.light .bg-\[\#0a0f1d\] {
+  background-color: #f8fafc !important;
+  color: #0f172a !important;
+}
+
+/* Surfaces & Cards */
+html.light .bg-slate-900,
+html.light .bg-slate-900\/90,
+html.light .bg-slate-900\/80,
+html.light .bg-slate-900\/60,
+html.light .bg-slate-900\/70,
+html.light .bg-slate-900\/50 {
+  background-color: #ffffff !important;
+  border-color: #e0f2fe !important;
+}
+
+html.light .bg-slate-950,
+html.light .bg-slate-950\/90,
+html.light .bg-slate-950\/80,
+html.light .bg-slate-950\/60,
+html.light .bg-slate-950\/50 {
+  background-color: #f0f9ff !important;
+  border-color: #e0f2fe !important;
+}
+
+html.light .bg-slate-800,
+html.light .bg-slate-800\/90,
+html.light .bg-slate-800\/80,
+html.light .bg-slate-800\/60 {
+  background-color: #f1f5f9 !important;
+  color: #0f172a !important;
+  border-color: #cbd5e1 !important;
+}
+
+html.light .hover\:bg-slate-800:hover,
+html.light .hover\:bg-slate-700:hover {
+  background-color: #e2e8f0 !important;
+  color: #0f172a !important;
+}
+
+/* Header & Sidebar in Light Mode */
+html.light header,
+html.light aside {
+  background-color: #ffffff !important;
+  border-right-color: #e2e8f0 !important;
+  border-bottom-color: #e2e8f0 !important;
+}
+
+html.light header {
+  box-shadow: 0 1px 3px 0 rgba(14, 165, 233, 0.08) !important;
+}
+
+/* Text Colors in Light Mode - High Contrast Readability */
+html.light .text-white {
+  color: #0f172a !important;
+}
+
+html.light .text-slate-100,
+html.light .text-slate-200 {
+  color: #0f172a !important;
+}
+
+html.light .text-slate-300 {
+  color: #1e293b !important;
+}
+
+html.light .text-slate-400 {
+  color: #334155 !important;
+}
+
+html.light .text-slate-500 {
+  color: #64748b !important;
+}
+
+/* Ensure solid action buttons retain white text in light mode */
+html.light button.bg-indigo-600,
+html.light button.bg-indigo-700,
+html.light button.bg-sky-600,
+html.light button.bg-sky-700,
+html.light button.bg-blue-600,
+html.light button.bg-blue-700,
+html.light button.bg-emerald-600,
+html.light button.bg-emerald-700,
+html.light button.bg-red-600,
+html.light button.bg-red-700,
+html.light .badge-solid-white {
+  color: #ffffff !important;
+}
+
+/* Borders */
+html.light .border-slate-800,
+html.light .border-slate-800\/90,
+html.light .border-slate-800\/80,
+html.light .border-slate-800\/70,
+html.light .border-slate-800\/60,
+html.light .border-slate-700,
+html.light .border-slate-700\/80,
+html.light .border-slate-700\/60 {
+  border-color: #e2e8f0 !important;
+}
+
+/* Form Controls (Inputs, Selects, Textareas) */
+html.light input,
+html.light select,
+html.light textarea {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+  border-color: #cbd5e1 !important;
+}
+
+html.light select option {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+}
+
+html.dark select option,
+:root select option {
+  background-color: #0f172a !important;
+  color: #f8fafc !important;
+}
+
+html.light input::placeholder,
+html.light textarea::placeholder {
+  color: #94a3b8 !important;
+}
+
+html.light input:focus,
+html.light select:focus,
+html.light textarea:focus {
+  border-color: #0284c7 !important;
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+}
+
+/* Tables in Light Mode */
+html.light table thead tr {
+  background-color: #f0f9ff !important;
+  color: #0369a1 !important;
+}
+
+html.light table tbody tr {
+  background-color: #ffffff !important;
+  border-bottom-color: #e2e8f0 !important;
+}
+
+html.light table tbody tr:hover {
+  background-color: #f0f9ff !important;
+}
+
+/* Status & Colored Badges in Calm Light Blue Aesthetic */
+html.light .bg-emerald-950,
+html.light .bg-emerald-950\/90,
+html.light .bg-emerald-950\/80,
+html.light .bg-emerald-950\/40 {
+  background-color: #f0fdf4 !important;
+  border-color: #bbf7d0 !important;
+  color: #166534 !important;
+}
+html.light .text-emerald-300,
+html.light .text-emerald-400 {
+  color: #15803d !important;
+}
+
+/* Transform heavy indigo into soft sky blue */
+html.light .bg-indigo-950,
+html.light .bg-indigo-950\/90,
+html.light .bg-indigo-950\/80,
+html.light .bg-indigo-950\/40 {
+  background-color: #f0f9ff !important;
+  border-color: #bae6fd !important;
+  color: #0369a1 !important;
+}
+html.light .text-indigo-200,
+html.light .text-indigo-300,
+html.light .text-indigo-400 {
+  color: #0284c7 !important;
+}
+
+/* Transform harsh amber into calm soft amber */
+html.light .bg-amber-950,
+html.light .bg-amber-950\/90,
+html.light .bg-amber-950\/80,
+html.light .bg-amber-950\/40 {
+  background-color: #fefce8 !important;
+  border-color: #fef08a !important;
+  color: #854d0e !important;
+}
+html.light .text-amber-200,
+html.light .text-amber-300,
+html.light .text-amber-400 {
+  color: #a16207 !important;
+}
+
+html.light .bg-red-950,
+html.light .bg-red-950\/90,
+html.light .bg-red-950\/80,
+html.light .bg-red-950\/40 {
+  background-color: #fef2f2 !important;
+  border-color: #fecaca !important;
+  color: #991b1b !important;
+}
+html.light .text-red-200,
+html.light .text-red-300,
+html.light .text-red-400 {
+  color: #b91c1c !important;
+}
+
+/* Soft Sky-Blue for Cyan */
+html.light .bg-cyan-950,
+html.light .bg-cyan-950\/40 {
+  background-color: #f0f9ff !important;
+  border-color: #bae6fd !important;
+  color: #0369a1 !important;
+}
+html.light .text-cyan-200,
+html.light .text-cyan-300,
+html.light .text-cyan-400 {
+  color: #0284c7 !important;
+}
+
+/* Soft Slate/Blue for Purple */
+html.light .bg-purple-950,
+html.light .bg-purple-950\/40,
+html.light .bg-purple-900\/60 {
+  background-color: #f0f9ff !important;
+  border-color: #bae6fd !important;
+  color: #0369a1 !important;
+}
+html.light .text-purple-200,
+html.light .text-purple-300 {
+  color: #0284c7 !important;
+}
