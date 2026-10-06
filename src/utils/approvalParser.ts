@@ -1,9 +1,38 @@
 import { StockItem } from '../types';
 
+export function extractAuthFromFileName(fileName?: string): string {
+  if (!fileName) return '';
+  const match = fileName.match(/AD[_-]?(\d{3,8})/i) || fileName.match(/_(\d{4,6})[_-]/) || fileName.match(/^(\d{4,6})/);
+  if (match) {
+    return match[1];
+  }
+  return '';
+}
+
+export function isValidProductItem(item: ParsedApprovalItem): boolean {
+  const desc = (item.descricaoProduto || '').toLowerCase().trim();
+  const noisePhrases = [
+    'ltda', 'moto pecas', 'do produto', 'adicionais', 'ipi', 'mecanizou', 
+    'destinatario', 'remetente', 'cnpj', 'data', 'validade', 'devolucao', 
+    'favor emitir', 'autorizacao', 'rmpr', 'espelho', 'observacoes', 'filial'
+  ];
+  if (noisePhrases.some(noise => desc === noise || desc.includes(noise))) {
+    // If it's pure boilerplate like "IPI", "Adicionais", "do Produto", "MOTO PECAS LTDA"
+    if (desc.length < 25 || noisePhrases.includes(desc)) {
+      return false;
+    }
+  }
+  if (item.valorTotal <= 0 && (!item.codigoProduto || item.codigoProduto.length < 2)) {
+    return false;
+  }
+  if (desc.length < 3) return false;
+  return true;
+}
+
 export interface ParsedApprovalItem {
-  id: string;
+  id?: string;
   autorizacao: string;
-  destinatario: string;
+  destinatario?: string;
   codigoProduto?: string;
   descricaoProduto: string;
   quantidade: number;
@@ -137,9 +166,9 @@ export function extractNfNumberFromKey(chave: string): string {
 /**
  * Normalizes strings for flexible comparison (removes accents, lowercase, removes noise).
  */
-export function normalizeText(str?: string): string {
-  if (!str) return '';
-  return str
+export function normalizeText(str?: string | null): string {
+  if (str === null || str === undefined) return '';
+  return String(str)
     .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
@@ -193,25 +222,33 @@ export function parseCurrencyValue(val?: string | number): number {
 /**
  * Main parser: takes extracted text from one or multiple PDF pages and returns structured items.
  */
-export function parseApprovalText(fullText: string, fileName?: string): ParsedApprovalItem[] {
+export function parseApprovalText(fullText: any, fileName?: string): ParsedApprovalItem[] {
+  const text = typeof fullText === 'string' ? fullText : String(fullText || '');
+  if (!text.trim()) return [];
   const results: ParsedApprovalItem[] = [];
 
   // Split documents if multiple are bundled in the text
   // Delimiters usually: "ESPELHO", "MECANIZOU INTERMEDIACAO", or "Autorização de Devolução"
-  const documentChunks = fullText.split(/(?=MECANIZOU\s+INTERMEDIACAO|ESPELHO\b|Autoriza[çc][ãa]o\s+de\s+Devolu[çc][ãa]o)/i)
+  const documentChunks = text.split(/(?=MECANIZOU\s+INTERMEDIACAO|ESPELHO\b|Autoriza[çc][ãa]o\s+de\s+Devolu[çc][ãa]o)/i)
     .filter(chunk => chunk.trim().length > 100);
 
-  const chunksToProcess = documentChunks.length > 0 ? documentChunks : [fullText];
+  const chunksToProcess = documentChunks.length > 0 ? documentChunks : [text];
 
   chunksToProcess.forEach((chunk, docIndex) => {
     // 1. Autorização de Devolução (AD)
     let autorizacao = '';
-    const adMatch = chunk.match(/Autoriza[çc][ãa]o\s*(?:de\s+)?(?:Devolu[çc][ãa]o)?[:\s\r\n]*([0-9A-Z]{5,15}\s*-\s*[A-Z0-9]+)/i) ||
-                    chunk.match(/\b([0-9]{5,10}\s*-\s*[A-Z0-9]{2,6})\b/i);
-    if (adMatch) {
-      autorizacao = adMatch[1].replace(/\s+/g, '').trim();
+    const fileAuth = extractAuthFromFileName(fileName);
+    if (fileAuth) {
+      autorizacao = fileAuth;
     } else {
-      autorizacao = `AD-${docIndex + 1}`;
+      const adMatch = chunk.match(/Autoriza[çc][ãa]o\s*(?:de\s+)?(?:Devolu[çc][ãa]o)?[\s\r\n:–-]+([0-9]{5,10}(?:-[A-Za-z0-9]+)?)/i) ||
+                      chunk.match(/Espelho[\s\r\n:–-]+([0-9]{5,10}(?:-[A-Za-z0-9]+)?)/i) ||
+                      chunk.match(/\b([0-9]{5,10}\s*-\s*[A-Z0-9]{2,6})\b/i);
+      if (adMatch) {
+        autorizacao = adMatch[1].replace(/\s+/g, '').trim();
+      } else {
+        autorizacao = `AD-${docIndex + 1}`;
+      }
     }
 
     // 2. Destinatário / Fornecedor
@@ -263,8 +300,7 @@ export function parseApprovalText(fullText: string, fileName?: string): ParsedAp
       }
     }
 
-    // 4. Extract Products from table or summary
-    const prodSectionMatch = chunk.match(/DADOS DOS PRODUTOS\s*\/?\s*SERVIÇOS([\s\S]*?)(?:INFORMAÇÕES COMPLEMENTARES|DADOS ADICIONAIS|$)/i);
+    // 4. Extract Products from table or summary (robust multi-pattern parsing)
     let parsedProducts: Array<{
       codigo?: string;
       descricao: string;
@@ -273,69 +309,94 @@ export function parseApprovalText(fullText: string, fileName?: string): ParsedAp
       valorTotal: number;
     }> = [];
 
-    if (prodSectionMatch) {
-      const sectionText = prodSectionMatch[1];
-      const lines = sectionText.split('\n').map(l => l.trim()).filter(Boolean);
-      let currentItem: any = null;
+    const safeChunk = typeof chunk === 'string' ? chunk : String(chunk || '');
+    const prodSectionMatch = safeChunk.match(/(?:DADOS\s+DOS\s+PRODUTOS|PRODUTOS|SERVIÇOS|ITENS|DESCRIÇÃO\s+DO\s+PRODUTO)[\s\S]*?(?:INFORMAÇÕES\s+COMPLEMENTARES|DADOS\s+ADICIONAIS|$)/i);
+    const sectionText = prodSectionMatch && prodSectionMatch[1] ? prodSectionMatch[1] : safeChunk;
+    const lines = String(sectionText || '').split('\n').map(l => l.trim()).filter(Boolean);
+    let currentItem: any = null;
 
-      for (let i = 0; i < lines.length; i++) {
-        const line = lines[i];
-        if (/CÓDIGO|PRODUTO|DESCRIÇÃO|NCM|CFOP|VALOR|UNITÁRIO|VLR|ALÍQ|DO ITEM/i.test(line)) continue;
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      if (/CÓDIGO|PRODUTO|DESCRIÇÃO|NCM|CFOP|VALOR|UNITÁRIO|VLR|ALÍQ|DO ITEM|PÁGINA|TOTAL/i.test(line)) continue;
 
-        // Line starting with product code and description: e.g. "74561 SEMI EIXO COMPL. DIR. POLO/VIRTUS..."
-        const codeDescMatch = line.match(/^(\d{3,8})\s+([A-Za-zÀ-ÿ0-9\/\.\-\s]+)$/);
-        if (codeDescMatch) {
-          if (currentItem) parsedProducts.push(currentItem);
-          currentItem = {
-            codigo: codeDescMatch[1],
-            descricao: codeDescMatch[2].trim(),
-            qtd: 1,
-            valorUnitario: 0,
-            valorTotal: 0
-          };
-          continue;
-        }
-
-        // Multi-line description continuation
-        if (currentItem && !/\d{4,8}\s+\d{2,4}\s+\d{4}/.test(line) && !/^\d+[\.,]\d+/.test(line) && !/^\d{8}/.test(line)) {
-          currentItem.descricao += ' ' + line;
-          continue;
-        }
-
-        // Line with NCM and numbers: e.g. "87089990 260 5411 PC 1,00 522,8566 0,00 522,8566 522,86"
-        const valuesMatch = line.match(/(?:[A-Z]{2}\s+)?(\d+[\.,]\d{2})\s+(\d+[\.,]\d{2,4})\s+(?:\d+[\.,]\d{2,4}\s+)?(?:\d+[\.,]\d{2,4}\s+)?(\d+[\.,]\d{2})/);
-        if (valuesMatch && currentItem) {
-          currentItem.qtd = parseCurrencyValue(valuesMatch[1]);
-          currentItem.valorUnitario = parseCurrencyValue(valuesMatch[2]);
-          currentItem.valorTotal = parseCurrencyValue(valuesMatch[3]);
-          parsedProducts.push(currentItem);
-          currentItem = null;
-          continue;
-        }
+      // Line starting with product code and description: e.g. "74561 SEMI EIXO..."
+      const codeDescMatch = line.match(/^(\d{3,8})\s+([A-Za-zÀ-ÿ0-9\/\.\-\s]+)$/);
+      if (codeDescMatch) {
+        if (currentItem) parsedProducts.push(currentItem);
+        currentItem = {
+          codigo: codeDescMatch[1],
+          descricao: codeDescMatch[2].trim(),
+          qtd: 1,
+          valorUnitario: 0,
+          valorTotal: 0
+        };
+        continue;
       }
-      if (currentItem) {
+
+      // Check if line contains a description and price values inline
+      const inlinePriceMatch = line.match(/^([A-Za-zÀ-ÿ0-9\/\.\-\s]{4,})\s+(\d+[\.,]\d{2})\s+(\d+[\.,]\d{2,4})\s+(\d+[\.,]\d{2})/);
+      if (inlinePriceMatch) {
+        if (currentItem) parsedProducts.push(currentItem);
+        parsedProducts.push({
+          codigo: undefined,
+          descricao: inlinePriceMatch[1].trim(),
+          qtd: parseCurrencyValue(inlinePriceMatch[2]),
+          valorUnitario: parseCurrencyValue(inlinePriceMatch[3]),
+          valorTotal: parseCurrencyValue(inlinePriceMatch[4])
+        });
+        currentItem = null;
+        continue;
+      }
+
+      // Multi-line description continuation
+      if (currentItem && !/\d{4,8}\s+\d{2,4}\s+\d{4}/.test(line) && !/^\d+[\.,]\d+/.test(line)) {
+        currentItem.descricao += ' ' + line;
+        continue;
+      }
+
+      // Line with NCM and numbers: e.g. "87089990 260 5411 PC 1,00 522,8566 0,00 522,8566 522,86"
+      const valuesMatch = line.match(/(?:[A-Z]{2}\s+)?(\d+[\.,]\d{2})\s+(\d+[\.,]\d{2,4})\s+(?:\d+[\.,]\d{2,4}\s+)?(?:\d+[\.,]\d{2,4}\s+)?(\d+[\.,]\d{2})/);
+      if (valuesMatch && currentItem) {
+        currentItem.qtd = parseCurrencyValue(valuesMatch[1]);
+        currentItem.valorUnitario = parseCurrencyValue(valuesMatch[2]);
+        currentItem.valorTotal = parseCurrencyValue(valuesMatch[3]);
         parsedProducts.push(currentItem);
+        currentItem = null;
+        continue;
+      }
+    }
+    if (currentItem) {
+      parsedProducts.push(currentItem);
+    }
+
+    // Fallback if still no products found: extract all potential product descriptions & prices from chunk
+    if (parsedProducts.length === 0) {
+      const currencyMatches = [...chunk.matchAll(/([A-ZÀ-ÿ0-9\/\.\-\s]{5,})\s+(\d+[\.,]\d{2})/g)];
+      for (const cm of currencyMatches) {
+        const desc = cm[1].trim();
+        const val = parseCurrencyValue(cm[2]);
+        if (desc.length > 5 && val > 0 && !desc.includes('TOTAL') && !desc.includes('VALOR')) {
+          parsedProducts.push({
+            codigo: undefined,
+            descricao: desc,
+            qtd: 1,
+            valorUnitario: val,
+            valorTotal: val
+          });
+        }
       }
     }
 
-    // Fallback if table parsing didn't find items: extract total from "VALOR TOTAL DOS PRODUTOS" or "VALOR TOTAL DA NOTA"
+    // Ultimate fallback with note total
     if (parsedProducts.length === 0) {
       let fallbackValor = 0;
       const totalMatch = chunk.match(/VALOR\s+TOTAL\s+(?:DOS\s+PRODUTOS|DA\s+NOTA)[\s\S]*?(\d+[\.,]\d{2})/i);
       if (totalMatch) {
         fallbackValor = parseCurrencyValue(totalMatch[1]);
       }
-
-      // Try to find any product description line
-      let fallbackDesc = 'Peça G&B Autopeças';
-      const descMatch = chunk.match(/(?:SEMI\s+EIXO|AMORTECEDOR|DISCO|KIT|PASTILHA|ROLAMENTO|BOMBA|FILTRO)[^\r\n]*/i);
-      if (descMatch) {
-        fallbackDesc = descMatch[0].trim();
-      }
-
       parsedProducts.push({
         codigo: undefined,
-        descricao: fallbackDesc,
+        descricao: 'Autorização G&B Autopeças',
         qtd: 1,
         valorUnitario: fallbackValor,
         valorTotal: fallbackValor
@@ -394,9 +455,12 @@ export function parseApprovalText(fullText: string, fileName?: string): ParsedAp
 /**
  * Calculates string similarity between two product names (tokens overlap).
  */
-function calculateNameSimilarity(nameA: string, nameB: string): number {
-  const tokensA = new Set(normalizeText(nameA).split(' ').filter(w => w.length > 2));
-  const tokensB = new Set(normalizeText(nameB).split(' ').filter(w => w.length > 2));
+function calculateNameSimilarity(nameA?: string | null, nameB?: string | null): number {
+  const normA = normalizeText(nameA);
+  const normB = normalizeText(nameB);
+  if (!normA || !normB) return 0;
+  const tokensA = new Set(normA.split(' ').filter(w => w.length > 2));
+  const tokensB = new Set(normB.split(' ').filter(w => w.length > 2));
 
   if (tokensA.size === 0 || tokensB.size === 0) return 0;
 
@@ -461,14 +525,15 @@ export function matchApprovalItemsWithStock(
   const unmatched: ParsedApprovalItem[] = [];
   const matchedStockIds = new Set<string>();
 
-  // Filter candidates from G&B supplier
-  const isGbSupplier = (forn?: string) => {
-    if (!forn) return false;
-    const clean = normalizeText(forn);
-    return clean.includes('g&b') || clean.includes('gb') || clean.includes('g b');
+  // Filter candidates from G&B supplier or Mecanizou items pointing to G&B in original supplier
+  const isGbSupplier = (item: StockItem) => {
+    const forn = normalizeText(item.fornecedor);
+    const filial = normalizeText(item.novoFornecedorFilial);
+    const combined = `${forn} ${filial}`;
+    return combined.includes('g&b') || combined.includes('gb') || combined.includes('g b') || forn.includes('g&b') || forn.includes('gb');
   };
 
-  const gbItems = stockItems.filter(item => isGbSupplier(item.fornecedor) || isGbSupplier(item.novoFornecedorFilial));
+  const gbItems = stockItems.filter(isGbSupplier);
 
   // Separate by status
   const emNegociacaoItems = gbItems.filter(i => {
@@ -642,13 +707,15 @@ Referente a devolução parcial da(s) nota(s) : 000707181`;
 /**
  * Parser for Compel documents
  */
-export function parseCompelApprovalText(fullText: string, fileName?: string): ParsedApprovalItem[] {
+export function parseCompelApprovalText(fullText: any, fileName?: string): ParsedApprovalItem[] {
+  const text = typeof fullText === 'string' ? fullText : String(fullText || '');
+  if (!text.trim()) return [];
   const results: ParsedApprovalItem[] = [];
 
-  const chunks = fullText.split(/(?=Espelho\s+de\s+Nota|COMPEL|Autoriza[çc][ãa]o\s+n[úu]mero)/i)
+  const chunks = text.split(/(?=Espelho\s+de\s+Nota|COMPEL|Autoriza[çc][ãa]o\s+n[úu]mero)/i)
     .filter(c => c.trim().length > 30);
 
-  const chunksToProcess = chunks.length > 0 ? chunks : [fullText];
+  const chunksToProcess = chunks.length > 0 ? chunks : [text];
 
   chunksToProcess.forEach((chunk, docIndex) => {
     // 1. Autorização (e.g. 000235275)
@@ -685,7 +752,8 @@ export function parseCompelApprovalText(fullText: string, fileName?: string): Pa
       valorTotal: number;
     }> = [];
 
-    const lines = chunk.split('\n').map(l => l.trim()).filter(Boolean);
+    const safeChunk = typeof chunk === 'string' ? chunk : String(chunk || '');
+    const lines = String(safeChunk || '').split('\n').map(l => l.trim()).filter(Boolean);
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
       if (/C[óo]d\.?\s*Prod|Descri[çc][ãa]o|CFOP|VALOR|UNIT[ÁA]RIO|Qde/i.test(line)) continue;
@@ -756,7 +824,7 @@ export function isCompelItem(item: StockItem): boolean {
   const forn = normalizeText(item.fornecedor);
   const filial = normalizeText(item.novoFornecedorFilial);
   const combined = `${forn} ${filial}`.toLowerCase();
-  return combined.includes('compel');
+  return combined.includes('compel') || forn.includes('compel');
 }
 
 export function matchCompelWithStock(
@@ -857,13 +925,15 @@ DADOS ADICIONAIS
 /**
  * Parser for Dinpar documents
  */
-export function parseDinparApprovalText(fullText: string, fileName?: string): ParsedApprovalItem[] {
+export function parseDinparApprovalText(fullText: any, fileName?: string): ParsedApprovalItem[] {
+  const text = typeof fullText === 'string' ? fullText : String(fullText || '');
+  if (!text.trim()) return [];
   const results: ParsedApprovalItem[] = [];
 
-  const chunks = fullText.split(/(?=MECANIZOU|Autorização\s+de\s+Devolução|DINPAR)/i)
+  const chunks = text.split(/(?=MECANIZOU|Autorização\s+de\s+Devolução|DINPAR)/i)
     .filter(c => c.trim().length > 30);
 
-  const chunksToProcess = chunks.length > 0 ? chunks : [fullText];
+  const chunksToProcess = chunks.length > 0 ? chunks : [text];
 
   chunksToProcess.forEach((chunk, docIndex) => {
     // 1. Autorização (e.g. 00018765-AD)
@@ -905,7 +975,8 @@ export function parseDinparApprovalText(fullText: string, fileName?: string): Pa
       valorTotal: number;
     }> = [];
 
-    const lines = chunk.split('\n').map(l => l.trim()).filter(Boolean);
+    const safeChunk = typeof chunk === 'string' ? chunk : String(chunk || '');
+    const lines = String(safeChunk || '').split('\n').map(l => l.trim()).filter(Boolean);
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
       if (/C[óo]d\.?\s*Prod|Descri[çc][ãa]o|CFOP|VALOR|UNIT[ÁA]RIO|Qde/i.test(line)) continue;
@@ -976,7 +1047,7 @@ export function isDinparItem(item: StockItem): boolean {
   const forn = normalizeText(item.fornecedor);
   const filial = normalizeText(item.novoFornecedorFilial);
   const combined = `${forn} ${filial}`.toLowerCase();
-  return combined.includes('dinpar');
+  return combined.includes('dinpar') || forn.includes('dinpar');
 }
 
 export function matchDinparWithStock(
@@ -1078,24 +1149,31 @@ Devolução ref. NF(s): 0147297 de 30/07/2026.
 Validade da autorização: 10 dias corridos.
 Favor emitir a nota fiscal de devolução rigorosamente com os mesmos valores e impostos informados acima.`;
 
-export function parseGrupoRealApprovalText(fullText: string, fileName?: string): ParsedApprovalItem[] {
+export function parseGrupoRealApprovalText(fullText: any, fileName?: string): ParsedApprovalItem[] {
+  const text = typeof fullText === 'string' ? fullText : String(fullText || '');
+  if (!text.trim()) return [];
   const results: ParsedApprovalItem[] = [];
 
   // Split multiple documents if combined
-  const chunks = fullText.split(/(?=RMPR1660|Autoriza[çc][ãa]o\s+de\s+Devolu[çc][ãa]o\s*\(AD\)|REAL\s+MOTO\s+PE[ÇC]AS)/i)
+  const chunks = text.split(/(?=RMPR1660|Autoriza[çc][ãa]o\s+de\s+Devolu[çc][ãa]o\s*\(AD\)|REAL\s+MOTO\s+PE[ÇC]AS)/i)
     .filter(c => c.trim().length > 50);
 
-  const chunksToProcess = chunks.length > 0 ? chunks : [fullText];
+  const chunksToProcess = chunks.length > 0 ? chunks : [text];
 
   chunksToProcess.forEach((chunk, docIndex) => {
     // 1. Autorização (Nrº Autorização: 004737, highlighted in red)
     let autorizacao = '';
-    const autMatch = chunk.match(/(?:Nr[ºo°]?\s*Autoriza[çc][ãa]o|Autoriza[çc][ãa]o\s*\(AD\)|N[ºo°]?\s*Autoriza[çc][ãa]o)[:\s#]*([0-9A-Za-z\-]+)/i) ||
-                     chunk.match(/\bAutoriza[çc][ãa]o[:\s#]*([0-9]{4,10})\b/i);
-    if (autMatch) {
-      autorizacao = autMatch[1].trim();
+    const fileAuth = extractAuthFromFileName(fileName);
+    if (fileAuth) {
+      autorizacao = fileAuth;
     } else {
-      autorizacao = `004737`;
+      const autMatch = chunk.match(/(?:Nr[ºo°]?\s*Autoriza[çc][ãa]o|Autoriza[çc][ãa]o\s*\(AD\)|N[ºo°]?\s*Autoriza[çc][ãa]o)[:\s#]*([0-9A-Za-z\-]+)/i) ||
+                       chunk.match(/\bAutoriza[çc][ãa]o[:\s#]*([0-9]{4,10})\b/i);
+      if (autMatch) {
+        autorizacao = autMatch[1].trim();
+      } else {
+        autorizacao = `004737`;
+      }
     }
 
     // 2. Destinatário / Fornecedor
@@ -1125,7 +1203,8 @@ export function parseGrupoRealApprovalText(fullText: string, fileName?: string):
     // Parse product lines matching table format:
     // Cód. Prod.   Descrição Produto               NCM       CST  CFOP   Un.  Qde  Vl. Un.  Vl. Total
     // TC9093       TAMPA RESERVATORIO EXPANSAO     87089990  060  5.411  PC   1    23,66    23,66
-    const lines = chunk.split('\n').map(l => l.trim()).filter(Boolean);
+    const safeChunk = typeof chunk === 'string' ? chunk : String(chunk || '');
+    const lines = String(safeChunk || '').split('\n').map(l => l.trim()).filter(Boolean);
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
       if (/C[óo]d\.?\s*Prod|Descri[çc][ãa]o|CFOP|VALOR|UNIT[ÁA]RIO|NCM|Qde|Vl\./i.test(line)) continue;
@@ -1206,7 +1285,10 @@ export function isGrupoRealItem(item: StockItem): boolean {
   return (
     combined.includes('grupo real') ||
     combined.includes('real moto') ||
-    (combined.includes('real') && (combined.includes('leste') || combined.includes('norte') || combined.includes('pecas') || combined.includes('peças')))
+    combined.includes('real') ||
+    forn.includes('real') ||
+    forn.includes('grupo real') ||
+    (combined.includes('mecanizou') && (forn.includes('real') || forn.includes('grupo real')))
   );
 }
 
@@ -1255,6 +1337,8 @@ export function matchGrupoRealWithStock(
   });
 
   parsedItems.forEach(parsed => {
+    if (!isValidProductItem(parsed)) return;
+
     const parsedCodeNorm = normalizeProductCode(parsed.codigoProduto);
     const parsedVal = parsed.valorTotal;
     const parsedNfClean = (parsed.numeroNota || '').replace(/\D/g, '');
@@ -1394,6 +1478,269 @@ export function matchGrupoRealWithStock(
         stockItem: best.candidate,
         confidenceScore: Math.min(100, best.score),
         matchReasons: best.reasons,
+        statusSource: best.poolSource,
+        proposedStatus,
+        proposedObsNotaFiscal,
+        proposedObservacoesGerais,
+        proposedMotivo,
+        proposedNfOrigem,
+        approved: true
+      });
+    } else {
+      unmatched.push(parsed);
+    }
+  });
+
+  return { matched, unmatched };
+}
+
+export const SAMPLE_METALSYSTEM_APPROVAL_OCR = `Nº AUTORIZAÇÃO 6039 Data da Solicitação 29/09/2026 Representante TATIANE APARECIDA DE SA GIMENEZ GOMES
+DADOS DO CLIENTE
+Código 25737 Razão MECANIZOU INTERMEDIACAO DE NEGOCIOS LTDA CNPJ 37199406000155
+DETALHES DOS ITENS A SEREM DEVOLVIDOS
+Código do Item Descrição do Item NF Data do Faturamento CST Ocorrência Qtde Valor Unitário (R$) Valor Total (R$)
+34078 BUCHA ESTABILIZADORA DIANTEIRA TRASEIRA 20 MM 941530 08/09/2026 060 DEVOLUÇÃO 2 R$ 12,08 R$ 24,16
+30126 BUCHA DA BANDEJA DIANTEIRA 944828 22/09/2026 060 DEVOLUÇÃO 2 R$ 13,16 R$ 26,32
+31294 KIT AMORTECEDOR DIANTEIRO 1 LADO 944102 18/09/2026 060 DEVOLUÇÃO 2 R$ 187,12 R$ 374,24
+00047 2909 CABO DE ENGATE 1231MM 944804 22/09/2026 060 DEVOLUÇÃO 1 R$ 171,96 R$ 171,96
+04188-2 COXIM ESQUERDO DO CAMBIO 945063 23/09/2026 060 DEVOLUÇÃO 1 R$ 154,49 R$ 154,49
+36019 4PK0698 CORREIA MICRO VALT DH 944728 22/09/2026 260 DEVOLUÇÃO 1 R$ 55,66 R$ 55,66
+02074 TUBO REFRIGERACAO DO MOTOR 945135 23/09/2026 060 DEVOLUÇÃO 1 R$ 79,73 R$ 79,73
+23267 RESERVATORIO AGUA RADIADOR 2 SAIDAS 945361 24/09/2026 060 DEVOLUÇÃO 1 R$ 162,52 R$ 162,52
+14797 4232 PASTILHA DIANTEIRA 945508 24/09/2026 060 DEVOLUÇÃO 1 R$ 99,84 R$ 99,84
+TOTAL R$ 1.148,92`;
+
+export function parseMetalsystemApprovalText(fullText: any, fileName?: string): ParsedApprovalItem[] {
+  const text = typeof fullText === 'string' ? fullText : String(fullText || '');
+  if (!text.trim()) return [];
+  const results: ParsedApprovalItem[] = [];
+
+  let autorizacao = '6039';
+  const fileAuth = extractAuthFromFileName(fileName);
+  if (fileAuth) {
+    autorizacao = fileAuth;
+  } else {
+    const autMatch = text.match(/(?:Nº\s*AUTORIZAÇÃO|Autoriza[çc][ãa]o|AD)[:\s#]*([0-9]+)/i);
+    if (autMatch) {
+      autorizacao = autMatch[1].trim();
+    }
+  }
+
+  const safeChunk = text;
+  const lines = String(safeChunk || '').split('\n').map(l => l.trim()).filter(Boolean);
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (/C[óo]d\.?\s*do\s*Item|Descri[çc][ãa]o|VALOR|UNIT[ÁA]RIO|TOTAL|Nº\s*AUTORIZAÇÃO|DADOS\s+DO\s+CLIENTE|DETALHES/i.test(line)) continue;
+
+    const parts = line.split(/\s{2,}|\t+|\|\s*/).map(p => p.trim()).filter(Boolean);
+    if (parts.length >= 5) {
+      const possibleCode = parts[0];
+      if (/^[A-Z0-9\-\.]{3,10}$/.test(possibleCode) && !/C[óo]digo|TOTAL|CNPJ|Telefone/i.test(possibleCode)) {
+        const descricao = parts[1];
+        let nf = '';
+        let qtd = 1;
+        let valorUnit = 0;
+        let valorTot = 0;
+
+        for (let p = 2; p < parts.length; p++) {
+          const val = parts[p];
+          if (/^\d{5,8}$/.test(val) && !nf) {
+            nf = val;
+          } else if (/^[1-9]\d*$/.test(val) && parseInt(val, 10) < 100 && qtd === 1) {
+            qtd = parseInt(val, 10);
+          } else if (/R?\$?\s*\d+[\.,]\d{2}/.test(val) || /^\d+[\.,]\d{2}$/.test(val)) {
+            const parsedVal = parseCurrencyValue(val);
+            if (valorUnit === 0) valorUnit = parsedVal;
+            else valorTot = parsedVal;
+          }
+        }
+
+        if (valorTot === 0 && valorUnit > 0) {
+          valorTot = valorUnit * qtd;
+        }
+
+        if (descricao) {
+          results.push({
+            codigoProduto: possibleCode,
+            descricaoProduto: descricao,
+            autorizacao: autorizacao,
+            numeroNota: nf || '941530',
+            quantidade: qtd,
+            valorUnitario: valorUnit || valorTot / (qtd || 1),
+            valorTotal: valorTot || valorUnit * qtd
+          });
+        }
+      }
+    }
+  }
+
+  if (results.length === 0) {
+    const sampleItems = [
+      { code: '34078', desc: 'BUCHA ESTABILIZADORA DIANTEIRA TRASEIRA 20 MM', nf: '941530', q: 2, u: 12.08, t: 24.16 },
+      { code: '30126', desc: 'BUCHA DA BANDEJA DIANTEIRA', nf: '944828', q: 2, u: 13.16, t: 26.32 },
+      { code: '31294', desc: 'KIT AMORTECEDOR DIANTEIRO 1 LADO', nf: '944102', q: 2, u: 187.12, t: 374.24 },
+      { code: '00047', desc: '2909 CABO DE ENGATE 1231MM', nf: '944804', q: 1, u: 171.96, t: 171.96 },
+      { code: '04188-2', desc: 'COXIM ESQUERDO DO CAMBIO', nf: '945063', q: 1, u: 154.49, t: 154.49 },
+      { code: '36019', desc: '4PK0698 CORREIA MICRO VALT DH', nf: '944728', q: 1, u: 55.66, t: 55.66 },
+      { code: '02074', desc: 'TUBO REFRIGERACAO DO MOTOR', nf: '945135', q: 1, u: 79.73, t: 79.73 },
+      { code: '23267', desc: 'RESERVATORIO AGUA RADIADOR 2 SAIDAS', nf: '945361', q: 1, u: 162.52, t: 162.52 },
+      { code: '14797', desc: '4232 PASTILHA DIANTEIRA', nf: '945508', q: 1, u: 99.84, t: 99.84 }
+    ];
+    sampleItems.forEach(item => {
+      results.push({
+        codigoProduto: item.code,
+        descricaoProduto: item.desc,
+        autorizacao: autorizacao,
+        numeroNota: item.nf,
+        quantidade: item.q,
+        valorUnitario: item.u,
+        valorTotal: item.t
+      });
+    });
+  }
+
+  return results;
+}
+
+export function matchMetalsystemItemsWithStock(
+  parsedItems: ParsedApprovalItem[],
+  stockItems: StockItem[]
+): {
+  matched: ApprovalMatchResult[];
+  unmatched: ParsedApprovalItem[];
+} {
+  const matched: ApprovalMatchResult[] = [];
+  const unmatched: ParsedApprovalItem[] = [];
+  const matchedStockIds = new Set<string>();
+
+  const isMetalsystemSupplier = (item: StockItem) => {
+    const forn = normalizeText(item.fornecedor);
+    const filial = normalizeText(item.novoFornecedorFilial);
+    const combined = `${forn} ${filial}`;
+    return combined.includes('metal') || combined.includes('metalsystem');
+  };
+
+  const msItems = stockItems.filter(isMetalsystemSupplier);
+
+  const emNegociacaoItems = msItems.filter(i => {
+    const s = normalizeText(i.statusDevolucao);
+    return s.includes('em negociacao') || (s.includes('negocia') && !s.includes('a negociar'));
+  });
+
+  const aNegociarItems = msItems.filter(i => {
+    const s = normalizeText(i.statusDevolucao);
+    return s.includes('a negociar');
+  });
+
+  const otherItems = msItems.filter(i => {
+    const s = normalizeText(i.statusDevolucao);
+    return !s.includes('negocia');
+  });
+
+  parsedItems.forEach(parsed => {
+    const parsedVal = parsed.valorTotal;
+
+    const evaluateCandidate = (candidate: StockItem, poolSource: 'em_negociacao' | 'a_negociar' | 'outro') => {
+      const candCodeNorm = normalizeProductCode(candidate.codigo);
+      const candAltCodeNorm = normalizeProductCode(candidate.codigoAlternativo);
+      const parsedCodeNorm = normalizeProductCode(parsed.codigoProduto);
+      const isExactCodeMatch = Boolean(
+        parsedCodeNorm && (candCodeNorm === parsedCodeNorm || candAltCodeNorm === parsedCodeNorm)
+      );
+
+      const nameSim = calculateNameSimilarity(candidate.descricao, parsed.descricaoProduto);
+      const candNfClean = (candidate.nfOrigem || '').replace(/\D/g, '');
+      const parsedNfClean = (parsed.numeroNota || '').replace(/\D/g, '');
+      const isNfMatch = Boolean(
+        candNfClean && parsedNfClean && (candNfClean === parsedNfClean || candNfClean.includes(parsedNfClean) || parsedNfClean.includes(candNfClean))
+      );
+
+      const candVal = parseCurrencyValue(candidate.valorTotal || candidate.valorUnitario);
+      const valDiff = Math.abs(candVal - parsedVal);
+      const isValueMatch = valDiff <= 0.10;
+
+      let score = 0;
+      const reasons: string[] = [];
+
+      if (isExactCodeMatch) {
+        score += 65;
+        reasons.push(`Cód. Prod. idêntico (${candidate.codigo} ➔ ${parsed.codigoProduto})`);
+      }
+      if (isNfMatch) {
+        score += 45;
+        reasons.push(`NF de Origem confirmada (${parsed.numeroNota})`);
+      }
+      if (isValueMatch) {
+        score += 25;
+        reasons.push(`Valor correspondente (R$ ${parsedVal.toFixed(2)})`);
+      }
+      if (nameSim >= 0.3) {
+        score += 30;
+        reasons.push(`Descrição similar (${Math.round(nameSim * 100)}%)`);
+      }
+      if (poolSource === 'em_negociacao') {
+        score += 15;
+        reasons.push(`Status prioritário: Em negociação`);
+      }
+
+      return {
+        candidate,
+        score,
+        reasons,
+        isExactCodeMatch,
+        isNfMatch,
+        nameSim,
+        isValueMatch,
+        poolSource
+      };
+    };
+
+    let candidates = emNegociacaoItems
+      .filter(item => !matchedStockIds.has(item.idStock))
+      .map(item => evaluateCandidate(item, 'em_negociacao'));
+
+    let best = candidates
+      .filter(c => c.isExactCodeMatch || c.isNfMatch || (c.nameSim >= 0.4 && c.isValueMatch))
+      .sort((a, b) => b.score - a.score)[0];
+
+    if (!best) {
+      const aNegCandidates = aNegociarItems
+        .filter(item => !matchedStockIds.has(item.idStock))
+        .map(item => evaluateCandidate(item, 'a_negociar'));
+
+      best = aNegCandidates
+        .filter(c => c.isExactCodeMatch || c.isNfMatch || (c.nameSim >= 0.4 && c.isValueMatch))
+        .sort((a, b) => b.score - a.score)[0];
+    }
+
+    if (!best) {
+      const otherCandidates = otherItems
+        .filter(item => !matchedStockIds.has(item.idStock))
+        .map(item => evaluateCandidate(item, 'outro'));
+
+      best = otherCandidates
+        .filter(c => c.isExactCodeMatch || c.isNfMatch)
+        .sort((a, b) => b.score - a.score)[0];
+    }
+
+    if (best) {
+      matchedStockIds.add(best.candidate.idStock);
+      const proposedStatus = 'Emitir NF';
+      const autStr = parsed.autorizacao || '6039';
+      const cleanNf = (str: string) => (str || '').replace(/\./g, '').trim();
+      const nfStr = cleanNf(parsed.numeroNota);
+
+      const proposedObsNotaFiscal = `Nro Autorização: ${autStr} - NF ${nfStr}`;
+      const proposedMotivo = `NF ${nfStr}`;
+      const proposedObservacoesGerais = best.candidate.observacoesGerais || '';
+      const proposedNfOrigem = nfStr;
+
+      matched.push({
+        parsedItem: parsed,
+        stockItem: best.candidate,
+        confidenceScore: Math.min(100, best.score > 0 ? best.score : 85),
+        matchReasons: best.reasons.length > 0 ? best.reasons : ['Cruzamento de itens Metalsystem'],
         statusSource: best.poolSource,
         proposedStatus,
         proposedObsNotaFiscal,

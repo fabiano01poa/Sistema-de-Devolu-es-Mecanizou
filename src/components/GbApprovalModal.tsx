@@ -15,7 +15,8 @@ import {
   HelpCircle,
   Edit3,
   Info,
-  Mail
+  Mail,
+  Trash2
 } from 'lucide-react';
 import { StockItem } from '../types';
 import { 
@@ -48,6 +49,8 @@ export const GbApprovalModal: React.FC<GbApprovalModalProps> = ({
   const [matchedResults, setMatchedResults] = useState<ApprovalMatchResult[]>([]);
   const [unmatchedItems, setUnmatchedItems] = useState<ParsedApprovalItem[]>([]);
   const [selectedMatchIndices, setSelectedMatchIndices] = useState<Set<number>>(new Set());
+  const [unmatchedSelections, setUnmatchedSelections] = useState<Record<number, string>>({});
+  const [reviewTab, setReviewTab] = useState<'matched' | 'unmatched'>('matched');
   
   // Custom manual edit state for a match
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
@@ -62,6 +65,8 @@ export const GbApprovalModal: React.FC<GbApprovalModalProps> = ({
     setMatchedResults([]);
     setUnmatchedItems([]);
     setSelectedMatchIndices(new Set());
+    setUnmatchedSelections({});
+    setReviewTab('matched');
     setEditingIndex(null);
   };
 
@@ -100,6 +105,7 @@ export const GbApprovalModal: React.FC<GbApprovalModalProps> = ({
       setSelectedMatchIndices(initialSelected);
 
       setUploadedFileNames(fileNames);
+      setReviewTab(matched.length === 0 && unmatched.length > 0 ? 'unmatched' : 'matched');
       setStep('review');
       setIsProcessing(false);
     } catch (err: any) {
@@ -233,15 +239,65 @@ export const GbApprovalModal: React.FC<GbApprovalModalProps> = ({
     document.body.removeChild(link);
   };
 
-  const handleSendUnmatchedEmail = () => {
+  const handleDownloadUnmatchedPdf = () => {
     if (unmatchedItems.length === 0) return;
-    const subject = encodeURIComponent('Relatório de Aprovações Pendentes Sem Match (Estoque)');
-    let bodyLines = 'Relatório de Aprovações Pendentes (Sem Match Automático):\n\n';
-    unmatchedItems.forEach((item, idx) => {
-      bodyLines += `${idx + 1}. AD: ${item.autorizacao} | NF: ${item.numeroNota} | Produto: ${item.descricaoProduto} | Valor: R$ ${(item.valorTotal || 0).toFixed(2)} | Arquivo: ${item.fileName || 'N/A'}\n`;
-    });
-    const body = encodeURIComponent(bodyLines);
-    window.location.href = `mailto:appestoque@mecanizou.com?subject=${subject}&body=${body}`;
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+    
+    const htmlContent = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Relatório de Aprovações Pendentes (Sem Match) - G&B</title>
+        <style>
+          body { font-family: Arial, sans-serif; padding: 20px; color: #111; }
+          h2 { color: #333; border-bottom: 2px solid #ddd; padding-bottom: 8px; }
+          table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+          th, td { border: 1px solid #ccc; padding: 8px 12px; text-align: left; font-size: 12px; }
+          th { background-color: #f4f4f4; }
+          .total { margin-top: 15px; font-weight: bold; font-size: 14px; }
+        </style>
+      </head>
+      <body>
+        <h2>Relatório de Aprovações Pendentes - G&B Sem Match (${unmatchedItems.length} itens)</h2>
+        <p>Data de geração: ${new Date().toLocaleDateString('pt-BR')} ${new Date().toLocaleTimeString('pt-BR')}</p>
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Autorização</th>
+              <th>NF</th>
+              <th>Descrição do Produto</th>
+              <th>Valor Total</th>
+              <th>Arquivo Origem</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${unmatchedItems.map((item, i) => `
+              <tr>
+                <td>${i + 1}</td>
+                <td>${item.autorizacao || '—'}</td>
+                <td>${item.numeroNota || '—'}</td>
+                <td>${item.descricaoProduto || '—'}</td>
+                <td>R$ ${(item.valorTotal || 0).toFixed(2).replace('.', ',')}</td>
+                <td>${item.fileName || '—'}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+        <div class="total">
+          Total Pendente: R$ ${unmatchedItems.reduce((acc, item) => acc + (item.valorTotal || 0), 0).toFixed(2).replace('.', ',')}
+        </div>
+        <script>
+          window.onload = function() {
+            window.print();
+          };
+        </script>
+      </body>
+      </html>
+    `;
+    printWindow.document.write(htmlContent);
+    printWindow.document.close();
   };
 
   // Manually link an unmatched item to a stock item
@@ -278,6 +334,10 @@ export const GbApprovalModal: React.FC<GbApprovalModalProps> = ({
 
     setMatchedResults(prev => [...prev, newMatch]);
     setSelectedMatchIndices(prev => new Set([...prev, matchedResults.length]));
+    setUnmatchedItems(prev => prev.filter((_, idx) => idx !== unmatchedIdx));
+  };
+
+  const handleRemoveUnmatchedItem = (unmatchedIdx: number) => {
     setUnmatchedItems(prev => prev.filter((_, idx) => idx !== unmatchedIdx));
   };
 
@@ -485,6 +545,35 @@ export const GbApprovalModal: React.FC<GbApprovalModalProps> = ({
           {/* STEP 2: Review and Verification of Matches */}
           {step === 'review' && (
             <div className="space-y-6">
+              {/* Top Action Bar with Apply Button (Encima) */}
+              <div className="bg-slate-950 p-4 rounded-xl border border-sky-500/30 flex flex-wrap items-center justify-between gap-3 shadow-lg">
+                <div className="flex items-center space-x-2">
+                  <Sparkles className="w-5 h-5 text-sky-400" />
+                  <div>
+                    <h3 className="text-xs font-bold text-white">Revisão de Aprovações G&B</h3>
+                    <p className="text-[11px] text-slate-400">Verifique os itens cruzados e clique em Aplicar para atualizar.</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleApplyChanges}
+                  disabled={isProcessing || selectedMatchIndices.size === 0}
+                  className="inline-flex items-center space-x-2 px-6 py-2.5 bg-sky-600 hover:bg-sky-500 text-white rounded-xl text-xs font-bold transition-all shadow-md cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isProcessing ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      <span>Aplicando...</span>
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>Aplicar Alterações ({selectedMatchIndices.size})</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
               {/* Summary Stats Header */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800">
@@ -500,315 +589,464 @@ export const GbApprovalModal: React.FC<GbApprovalModalProps> = ({
                   </p>
                 </div>
                 <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800">
-                  <span className="text-xs text-slate-400 font-medium">Sem Correspondência Encontrada</span>
+                  <span className="text-xs text-slate-400 font-medium">Aprovações sem match</span>
                   <p className={`text-xl font-extrabold mt-0.5 ${unmatchedItems.length > 0 ? 'text-amber-400' : 'text-slate-500'}`}>
                     {unmatchedItems.length}
                   </p>
                 </div>
               </div>
 
-              {/* SECTION 1: Matched Items */}
-              <div className="space-y-3">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                  <div className="flex items-center space-x-2">
-                    <CheckCircle2 className="w-5 h-5 text-emerald-400" />
-                    <h3 className="text-sm font-bold text-white">
-                      Itens com Match ({matchedResults.length})
-                    </h3>
-                  </div>
-
-                  {matchedResults.length > 0 && (
-                    <div className="flex items-center space-x-3 text-xs">
-                      <button
-                        type="button"
-                        onClick={() => handleSelectAll(true)}
-                        className="text-emerald-400 hover:text-emerald-300 font-semibold cursor-pointer underline"
-                      >
-                        Marcar Todos
-                      </button>
-                      <span className="text-slate-600">|</span>
-                      <button
-                        type="button"
-                        onClick={() => handleSelectAll(false)}
-                        className="text-slate-400 hover:text-white font-semibold cursor-pointer underline"
-                      >
-                        Desmarcar Todos
-                      </button>
-                      <span className="text-xs font-bold text-slate-300 bg-slate-800 px-2.5 py-0.5 rounded-full">
-                        {selectedMatchIndices.size} selecionado(s)
-                      </span>
-                    </div>
+              {/* Review Tabs Navigation */}
+              <div className="flex border-b border-slate-800 space-x-6">
+                <button
+                  type="button"
+                  onClick={() => setReviewTab('matched')}
+                  className={`pb-3 text-xs font-bold border-b-2 transition-colors cursor-pointer flex items-center gap-2 ${
+                    reviewTab === 'matched'
+                      ? 'border-emerald-500 text-emerald-400'
+                      : 'border-transparent text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>Itens com Match ({matchedResults.length})</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setReviewTab('unmatched')}
+                  className={`pb-3 text-xs font-bold border-b-2 transition-colors cursor-pointer flex items-center gap-2 ${
+                    reviewTab === 'unmatched'
+                      ? 'border-amber-500 text-amber-400'
+                      : 'border-transparent text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  <AlertTriangle className="w-4 h-4" />
+                  <span>Aprovações sem match ({unmatchedItems.length})</span>
+                  {unmatchedItems.length > 0 && (
+                    <span className="bg-amber-500 text-slate-950 font-black px-1.5 py-0.5 rounded-full text-[10px]">
+                      {unmatchedItems.length}
+                    </span>
                   )}
-                </div>
-
-                {matchedResults.length === 0 ? (
-                  <div className="p-6 bg-slate-950/60 border border-slate-800 rounded-xl text-center text-xs text-slate-400">
-                    Nenhum item do PDF bateu automaticamente com os itens pendentes da G&B no estoque.
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {matchedResults.map((match, idx) => {
-                      const isSelected = selectedMatchIndices.has(idx);
-                      const stock = match.stockItem;
-                      const parsed = match.parsedItem;
-                      const isANegociar = match.statusSource === 'a_negociar';
-
-                      return (
-                        <div
-                          key={`match-card-${idx}`}
-                          className={`p-4 rounded-xl border transition-all ${
-                            isSelected 
-                              ? 'bg-slate-950 border-emerald-500/50 shadow-md shadow-emerald-950/30 ring-1 ring-emerald-500/20' 
-                              : 'bg-slate-950/40 border-slate-800 opacity-75'
-                          }`}
-                        >
-                          {/* Card Top: Checkbox & Status Alerts */}
-                          <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-800/80">
-                            <label className="flex items-center space-x-3 cursor-pointer select-none">
-                              <input
-                                type="checkbox"
-                                checked={isSelected}
-                                onChange={() => handleToggleSelectMatch(idx)}
-                                className="w-4 h-4 rounded border-slate-700 text-emerald-600 focus:ring-emerald-500"
-                              />
-                              <span className="text-xs font-bold text-white">
-                                Aprovar Alteração deste Item
-                              </span>
-                            </label>
-
-                            <div className="flex flex-wrap items-center gap-2">
-                              {/* Status Source Warning */}
-                              {isANegociar ? (
-                                <span className="inline-flex items-center space-x-1 text-[11px] bg-amber-500/20 text-amber-300 border border-amber-500/40 px-2 py-0.5 rounded-full font-bold">
-                                  <AlertTriangle className="w-3.5 h-3.5" />
-                                  <span>Item no status 'A negociar' (Favor Confirmar)</span>
-                                </span>
-                              ) : (
-                                <span className="inline-flex items-center space-x-1 text-[11px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-2 py-0.5 rounded-full font-bold">
-                                  <Check className="w-3.5 h-3.5" />
-                                  <span>Status Estoque: Em negociação</span>
-                                </span>
-                              )}
-
-                              <span className="text-[11px] bg-slate-800 text-slate-300 px-2 py-0.5 rounded-full font-semibold">
-                                Confiança: {match.confidenceScore}%
-                              </span>
-                            </div>
-                          </div>
-
-                          {/* Comparison Grid */}
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-3 pb-3">
-                            {/* Left: Stock Item Info */}
-                            <div className="bg-slate-900/90 p-3 rounded-lg border border-slate-800 space-y-1.5">
-                              <div className="flex items-center justify-between text-[11px] text-slate-400">
-                                <span className="font-mono font-bold text-indigo-300">ID: {stock.idStock}</span>
-                                <span className="text-slate-400">{stock.fornecedor}</span>
-                              </div>
-                              <p className="text-xs font-bold text-white line-clamp-2">
-                                {stock.descricao}
-                              </p>
-                              <div className="flex items-center justify-between text-xs pt-1">
-                                <span className="text-slate-400">
-                                  Valor Estoque: <strong className="text-emerald-400">{stock.valorTotal || stock.valorUnitario}</strong>
-                                </span>
-                                {stock.nfOrigem && (
-                                  <span className="text-slate-400">
-                                    NF Origem: <strong className="text-amber-400">{stock.nfOrigem}</strong>
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-
-                            {/* Right: PDF Extracted Info */}
-                            <div className="bg-slate-900/90 p-3 rounded-lg border border-slate-800 space-y-1.5">
-                              <div className="flex items-center justify-between text-[11px] text-slate-400">
-                                <span className="font-mono font-bold text-rose-400">
-                                  AD: {parsed.autorizacao}
-                                </span>
-                                <span className="text-amber-400 font-bold">
-                                  NF Extraída: {parsed.numeroNota}
-                                </span>
-                              </div>
-                              <p className="text-xs font-bold text-slate-200 line-clamp-2">
-                                {parsed.descricaoProduto}
-                              </p>
-                              <div className="flex items-center justify-between text-xs pt-1">
-                                <span className="text-slate-400">
-                                  Valor PDF: <strong className="text-emerald-400">R$ {parsed.valorTotal.toFixed(2).replace('.', ',')}</strong>
-                                </span>
-                                {parsed.codigoProduto && (
-                                  <span className="text-slate-400">
-                                    Cód. G&B: <strong className="text-slate-300">{parsed.codigoProduto}</strong>
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* Match Reasons Badges */}
-                          <div className="flex flex-wrap items-center gap-1.5 pb-3">
-                            <span className="text-[10px] text-slate-500 font-semibold">Motivos do Cruzamento:</span>
-                            {match.matchReasons.map((r, rIdx) => (
-                              <span key={rIdx} className="text-[10px] bg-slate-800/80 text-slate-300 px-2 py-0.5 rounded-md border border-slate-700">
-                                {r}
-                              </span>
-                            ))}
-                          </div>
-
-                          {/* Proposed Updates Display & Inline Edit */}
-                          <div className="p-3 bg-slate-900/70 border border-slate-800 rounded-lg space-y-2 text-xs">
-                            <div className="flex items-center justify-between">
-                              <span className="font-bold text-slate-300 flex items-center space-x-1.5">
-                                <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                                <span>Alterações a Serem Salvas no Item:</span>
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => setEditingIndex(editingIndex === idx ? null : idx)}
-                                className="text-[11px] text-slate-400 hover:text-amber-400 flex items-center space-x-1 cursor-pointer"
-                              >
-                                <Edit3 className="w-3 h-3" />
-                                <span>{editingIndex === idx ? 'Fechar Edição' : 'Ajustar Campos'}</span>
-                              </button>
-                            </div>
-
-                            {editingIndex === idx ? (
-                              <div className="space-y-2 pt-1">
-                                <div>
-                                  <label className="text-[10px] font-semibold text-slate-400">Status da Devolução</label>
-                                  <input
-                                    type="text"
-                                    value={match.proposedStatus}
-                                    onChange={e => handleUpdateProposedField(idx, 'proposedStatus', e.target.value)}
-                                    className="w-full mt-0.5 px-2.5 py-1.5 bg-slate-950 border border-slate-700 rounded text-xs text-white"
-                                  />
-                                </div>
-                                <div>
-                                  <label className="text-[10px] font-semibold text-slate-400">Obs Nota Fiscal</label>
-                                  <input
-                                    type="text"
-                                    value={match.proposedObsNotaFiscal}
-                                    onChange={e => handleUpdateProposedField(idx, 'proposedObsNotaFiscal', e.target.value)}
-                                    className="w-full mt-0.5 px-2.5 py-1.5 bg-slate-950 border border-slate-700 rounded text-xs text-white"
-                                  />
-                                </div>
-                                <div>
-                                  <label className="text-[10px] font-semibold text-slate-400">Observações Gerais / Motivo</label>
-                                  <input
-                                    type="text"
-                                    value={match.proposedObservacoesGerais}
-                                    onChange={e => handleUpdateProposedField(idx, 'proposedObservacoesGerais', e.target.value)}
-                                    className="w-full mt-0.5 px-2.5 py-1.5 bg-slate-950 border border-slate-700 rounded text-xs text-white"
-                                  />
-                                </div>
-                              </div>
-                            ) : (
-                              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1 text-[11px]">
-                                <div>
-                                  <span className="text-slate-400">Novo Status: </span>
-                                  <strong className="text-emerald-400 font-bold">{match.proposedStatus}</strong>
-                                </div>
-                                <div className="sm:col-span-2">
-                                  <span className="text-slate-400">Obs Nota Fiscal: </span>
-                                  <strong className="text-amber-300 font-mono">{match.proposedObsNotaFiscal}</strong>
-                                </div>
-                                <div className="sm:col-span-3 text-slate-300 truncate">
-                                  <span className="text-slate-400">Obs Gerais/Motivo: </span>
-                                  <span className="font-mono text-slate-200">{match.proposedObservacoesGerais}</span>
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
+                </button>
               </div>
 
-              {/* SECTION 2: Unmatched Items from PDF */}
-              {unmatchedItems.length > 0 && (
-                <div className="space-y-3 pt-4 border-t border-slate-800">
+              {/* SECTION 1: Matched Items Tab */}
+              {reviewTab === 'matched' && (
+                <div className="space-y-3">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                     <div className="flex items-center space-x-2">
-                      <AlertTriangle className="w-5 h-5 text-amber-400" />
+                      <CheckCircle2 className="w-5 h-5 text-emerald-400" />
                       <h3 className="text-sm font-bold text-white">
-                        Itens do PDF Sem Match Automático ({unmatchedItems.length})
+                        Itens com Match ({matchedResults.length})
                       </h3>
                     </div>
 
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={handleDownloadUnmatchedCsv}
-                        className="inline-flex items-center space-x-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
-                      >
-                        <FileText className="w-3.5 h-3.5 text-sky-400" />
-                        <span>Baixar CSV Pendências</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={handleSendUnmatchedEmail}
-                        className="inline-flex items-center space-x-1.5 px-3 py-1.5 bg-sky-600 hover:bg-sky-500 text-white rounded-lg text-xs font-semibold transition-colors cursor-pointer shadow-sm"
-                      >
-                        <Mail className="w-3.5 h-3.5 text-white" />
-                        <span>Enviar por E-mail (appestoque@mecanizou.com)</span>
-                      </button>
-                    </div>
+                    {matchedResults.length > 0 && (
+                      <div className="flex items-center space-x-3 text-xs">
+                        <button
+                          type="button"
+                          onClick={() => handleSelectAll(true)}
+                          className="text-emerald-400 hover:text-emerald-300 font-semibold cursor-pointer underline"
+                        >
+                          Marcar Todos
+                        </button>
+                        <span className="text-slate-600">|</span>
+                        <button
+                          type="button"
+                          onClick={() => handleSelectAll(false)}
+                          className="text-slate-400 hover:text-white font-semibold cursor-pointer underline"
+                        >
+                          Desmarcar Todos
+                        </button>
+                        <span className="text-xs font-bold text-slate-300 bg-slate-800 px-2.5 py-0.5 rounded-full">
+                          {selectedMatchIndices.size} selecionado(s)
+                        </span>
+                      </div>
+                    )}
                   </div>
-                  <p className="text-xs text-slate-300">
-                    Estes itens foram identificados no PDF, mas não encontramos um item correspondente da G&B com o valor exato no estoque. Você pode vincular manualmente abaixo ou exportar o relatório:
-                  </p>
 
-                  <div className="space-y-2">
-                    {unmatchedItems.map((un, unIdx) => (
-                      <div 
-                        key={`unmatched-${unIdx}`}
-                        className="p-4 bg-slate-900 border border-slate-700 rounded-xl space-y-2.5 shadow-sm"
-                      >
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-xs">
-                          <div>
-                            <span className="font-mono font-bold text-rose-400">AD: {un.autorizacao}</span>
-                            <span className="mx-2 text-slate-500">•</span>
-                            <span className="text-amber-300 font-semibold">NF: {un.numeroNota || '—'}</span>
-                            <span className="mx-2 text-slate-500">•</span>
-                            <span className="text-emerald-400 font-bold">R$ {un.valorTotal.toFixed(2).replace('.', ',')}</span>
+                  {matchedResults.length === 0 ? (
+                    <div className="p-6 bg-slate-950/60 border border-slate-800 rounded-xl text-center text-xs text-slate-400">
+                      Nenhum item do PDF bateu automaticamente com os itens pendentes da G&B no estoque.
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {matchedResults.map((match, idx) => {
+                        const isSelected = selectedMatchIndices.has(idx);
+                        const stock = match.stockItem;
+                        const parsed = match.parsedItem;
+                        const isANegociar = match.statusSource === 'a_negociar';
+
+                        return (
+                          <div
+                            key={`match-card-${idx}`}
+                            className={`p-4 rounded-xl border transition-all ${
+                              isSelected 
+                                ? 'bg-slate-950 border-emerald-500/50 shadow-md shadow-emerald-950/30 ring-1 ring-emerald-500/20' 
+                                : 'bg-slate-950/40 border-slate-800 opacity-75'
+                            }`}
+                          >
+                            {/* Card Top: Checkbox & Status Alerts */}
+                            <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-800/80">
+                              <label className="flex items-center space-x-3 cursor-pointer select-none">
+                                <input
+                                  type="checkbox"
+                                  checked={isSelected}
+                                  onChange={() => handleToggleSelectMatch(idx)}
+                                  className="w-4 h-4 rounded border-slate-700 text-emerald-600 focus:ring-emerald-500"
+                                />
+                                <span className="text-xs font-bold text-white">
+                                  Aprovar Alteração deste Item
+                                </span>
+                              </label>
+
+                              <div className="flex flex-wrap items-center gap-2">
+                                {/* Status Source Warning */}
+                                {isANegociar ? (
+                                  <span className="inline-flex items-center space-x-1 text-[11px] bg-amber-500/20 text-amber-300 border border-amber-500/40 px-2 py-0.5 rounded-full font-bold">
+                                    <AlertTriangle className="w-3.5 h-3.5" />
+                                    <span>Item no status 'A negociar' (Favor Confirmar)</span>
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center space-x-1 text-[11px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-2 py-0.5 rounded-full font-bold">
+                                    <Check className="w-3.5 h-3.5" />
+                                    <span>Status Estoque: Em negociação</span>
+                                  </span>
+                                )}
+
+                                <span className="text-[11px] bg-slate-800 text-slate-300 px-2 py-0.5 rounded-full font-semibold">
+                                  Confiança: {match.confidenceScore}%
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Side-by-Side Comparison Table */}
+                            <div className="pt-3 pb-3 overflow-x-auto">
+                              <table className="w-full text-left text-xs border-collapse rounded-xl overflow-hidden border border-slate-800 shadow-inner">
+                                <thead>
+                                  <tr className="bg-slate-900 text-slate-400 border-b border-slate-800 text-[11px]">
+                                    <th className="p-3 font-bold uppercase tracking-wider w-1/4 text-slate-300">Campo Obrigatório</th>
+                                    <th className="p-3 font-bold uppercase tracking-wider w-1/3 text-indigo-300 bg-indigo-950/20">Planilha (Estoque)</th>
+                                    <th className="p-3 font-bold uppercase tracking-wider w-1/3 text-rose-300 bg-rose-950/20">Aprovação (PDF)</th>
+                                    <th className="p-3 font-bold uppercase tracking-wider w-1/6 text-center text-slate-300">Match</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-800/80 font-mono text-[11px] bg-slate-950/60">
+                                  {/* Código */}
+                                  <tr className="hover:bg-slate-900/40">
+                                    <td className="p-3 font-sans font-bold text-slate-300 flex items-center gap-1.5">
+                                      <span>Código / ID</span>
+                                    </td>
+                                    <td className="p-3 text-indigo-200 font-bold bg-indigo-950/10">
+                                      {stock.idStock || stock.codigo || '—'}
+                                    </td>
+                                    <td className="p-3 text-rose-200 font-bold bg-rose-950/10">
+                                      {parsed.codigoProduto || 'Não listado'}
+                                    </td>
+                                    <td className="p-3 text-center">
+                                      {match.confidenceScore >= 95 ? (
+                                        <span className="px-2.5 py-1 bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 rounded-lg text-[10px] font-bold shadow-sm inline-block">100% Match</span>
+                                      ) : (
+                                        <span className="px-2.5 py-1 bg-amber-500/20 text-amber-300 border border-amber-500/40 rounded-lg text-[10px] font-bold shadow-sm inline-block">Parcial (~80%)</span>
+                                      )}
+                                    </td>
+                                  </tr>
+                                  {/* Aprovação (AD) */}
+                                  <tr className="hover:bg-slate-900/40">
+                                    <td className="p-3 font-sans font-bold text-slate-300">Aprovação (AD)</td>
+                                    <td className="p-3 text-slate-500 bg-indigo-950/10">—</td>
+                                    <td className="p-3 text-rose-300 font-bold bg-rose-950/10">AD: {parsed.autorizacao || '—'}</td>
+                                    <td className="p-3 text-center">
+                                      <span className="px-2 py-0.5 bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 rounded text-[10px] font-bold">Documento</span>
+                                    </td>
+                                  </tr>
+                                  {/* Descrição */}
+                                  <tr className="hover:bg-slate-900/40">
+                                    <td className="p-3 font-sans font-bold text-slate-300">Descrição da Peça</td>
+                                    <td className="p-3 font-sans text-slate-200 font-medium bg-indigo-950/10">
+                                      {stock.descricao || '—'}
+                                    </td>
+                                    <td className="p-3 font-sans text-slate-200 font-medium bg-rose-950/10">
+                                      {parsed.descricaoProduto || '—'}
+                                    </td>
+                                    <td className="p-3 text-center">
+                                      <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 rounded text-[10px] font-bold">Compatível</span>
+                                    </td>
+                                  </tr>
+                                  {/* Valor */}
+                                  <tr className="hover:bg-slate-900/40">
+                                    <td className="p-3 font-sans font-bold text-slate-300">Valor Total (R$)</td>
+                                    <td className="p-3 text-emerald-400 font-bold bg-indigo-950/10">
+                                      R$ {parseFloat(String(stock.valorTotal || stock.valorUnitario || 0)).toFixed(2).replace('.', ',')}
+                                    </td>
+                                    <td className="p-3 text-emerald-400 font-bold bg-rose-950/10">
+                                      R$ {parsed.valorTotal.toFixed(2).replace('.', ',')}
+                                    </td>
+                                    <td className="p-3 text-center">
+                                      {Math.abs(parseFloat(String(stock.valorTotal || stock.valorUnitario || 0)) - parsed.valorTotal) < 0.1 ? (
+                                        <span className="px-2.5 py-1 bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 rounded-lg text-[10px] font-bold shadow-sm inline-block">100% Match</span>
+                                      ) : (
+                                        <span className="px-2.5 py-1 bg-amber-500/20 text-amber-300 border border-amber-500/40 rounded-lg text-[10px] font-bold shadow-sm inline-block">Ajuste Valor</span>
+                                      )}
+                                    </td>
+                                  </tr>
+                                  {/* NF Origem vs NF Sugerida */}
+                                  <tr className="hover:bg-slate-900/40">
+                                    <td className="p-3 font-sans font-bold text-slate-300">NF Origem vs. NF Sugerida</td>
+                                    <td className="p-3 text-amber-400 font-bold bg-indigo-950/10">
+                                      {stock.nfOrigem || stock.nf || 'Não informada'}
+                                    </td>
+                                    <td className="p-3 text-sky-300 font-bold bg-rose-950/10">
+                                      {parsed.numeroNota || 'Não extraída'}
+                                    </td>
+                                    <td className="p-3 text-center">
+                                      {stock.nfOrigem && parsed.numeroNota && (stock.nfOrigem.includes(parsed.numeroNota) || parsed.numeroNota.includes(stock.nfOrigem)) ? (
+                                        <span className="px-2.5 py-1 bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 rounded-lg text-[10px] font-bold shadow-sm inline-block">100% Match</span>
+                                      ) : (
+                                        <span className="px-2.5 py-1 bg-amber-500/20 text-amber-300 border border-amber-500/40 rounded-lg text-[10px] font-bold shadow-sm inline-block">Match Parcial</span>
+                                      )}
+                                    </td>
+                                  </tr>
+                                </tbody>
+                              </table>
+                            </div>
+
+                            {/* Confidence Badge & Match Color Banner */}
+                            <div className="flex items-center justify-between p-3 rounded-xl border text-xs font-bold shadow-sm mb-3"
+                              style={{
+                                backgroundColor: match.confidenceScore >= 95 ? 'rgba(16, 185, 129, 0.12)' : 'rgba(245, 158, 11, 0.12)',
+                                borderColor: match.confidenceScore >= 95 ? 'rgba(16, 185, 129, 0.4)' : 'rgba(245, 158, 11, 0.4)',
+                                color: match.confidenceScore >= 95 ? '#34d399' : '#fbbf24'
+                              }}
+                            >
+                              <div className="flex items-center space-x-2">
+                                {match.confidenceScore >= 95 ? (
+                                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                                ) : (
+                                  <AlertTriangle className="w-4 h-4 text-amber-400" />
+                                )}
+                                <span>
+                                  {match.confidenceScore >= 95 ? '✨ 100% Match (Destacado em Verde)' : '⚠️ Match Parcial (~80% - Destacado em Amarelo)'}
+                                </span>
+                              </div>
+                              <span className="px-2.5 py-1 rounded-lg bg-slate-900 border text-white font-mono">
+                                Confiança: {match.confidenceScore}%
+                              </span>
+                            </div>
+
+                            {/* Match Reasons Badges */}
+                            <div className="flex flex-wrap items-center gap-1.5 pb-3">
+                              <span className="text-[10px] text-slate-500 font-semibold">Motivos do Cruzamento:</span>
+                              {match.matchReasons.map((r, rIdx) => (
+                                <span key={rIdx} className="text-[10px] bg-slate-800/80 text-slate-300 px-2 py-0.5 rounded-md border border-slate-700">
+                                  {r}
+                                </span>
+                              ))}
+                            </div>
+
+                            {/* Proposed Updates Display & Inline Edit */}
+                            <div className="p-3 bg-slate-900/70 border border-slate-800 rounded-lg space-y-2 text-xs">
+                              <div className="flex items-center justify-between">
+                                <span className="font-bold text-slate-300 flex items-center space-x-1.5">
+                                  <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                                  <span>Alterações a Serem Salvas no Item:</span>
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => setEditingIndex(editingIndex === idx ? null : idx)}
+                                  className="text-[11px] text-slate-400 hover:text-amber-400 flex items-center space-x-1 cursor-pointer"
+                                >
+                                  <Edit3 className="w-3 h-3" />
+                                  <span>{editingIndex === idx ? 'Fechar Edição' : 'Ajustar Campos'}</span>
+                                </button>
+                              </div>
+
+                              {editingIndex === idx ? (
+                                <div className="space-y-2 pt-1">
+                                  <div>
+                                    <label className="text-[10px] font-semibold text-slate-400">Status da Devolução</label>
+                                    <input
+                                      type="text"
+                                      value={match.proposedStatus}
+                                      onChange={e => handleUpdateProposedField(idx, 'proposedStatus', e.target.value)}
+                                      className="w-full mt-0.5 px-2.5 py-1.5 bg-slate-950 border border-slate-700 rounded text-xs text-white"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="text-[10px] font-semibold text-slate-400">Obs Nota Fiscal</label>
+                                    <input
+                                      type="text"
+                                      value={match.proposedObsNotaFiscal}
+                                      onChange={e => handleUpdateProposedField(idx, 'proposedObsNotaFiscal', e.target.value)}
+                                      className="w-full mt-0.5 px-2.5 py-1.5 bg-slate-950 border border-slate-700 rounded text-xs text-white"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="text-[10px] font-semibold text-slate-400">Observações Gerais / Motivo</label>
+                                    <input
+                                      type="text"
+                                      value={match.proposedObservacoesGerais}
+                                      onChange={e => handleUpdateProposedField(idx, 'proposedObservacoesGerais', e.target.value)}
+                                      className="w-full mt-0.5 px-2.5 py-1.5 bg-slate-950 border border-slate-700 rounded text-xs text-white"
+                                    />
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1 text-[11px]">
+                                  <div>
+                                    <span className="text-slate-400">Novo Status: </span>
+                                    <strong className="text-emerald-400 font-bold">{match.proposedStatus}</strong>
+                                  </div>
+                                  <div className="sm:col-span-2">
+                                    <span className="text-slate-400">Obs Nota Fiscal: </span>
+                                    <strong className="text-amber-300 font-mono">{match.proposedObsNotaFiscal}</strong>
+                                  </div>
+                                  <div className="sm:col-span-3 text-slate-300 truncate">
+                                    <span className="text-slate-400">Obs Gerais/Motivo: </span>
+                                    <span className="font-mono text-slate-200">{match.proposedObservacoesGerais}</span>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
                           </div>
-                          {un.fileName && (
-                            <span className="text-[11px] text-slate-400 font-medium truncate">{un.fileName}</span>
-                          )}
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* SECTION 2: Aprovações sem match (Unmatched Items Tab) */}
+              {reviewTab === 'unmatched' && (
+                <div className="space-y-4">
+                  {unmatchedItems.length === 0 ? (
+                    <div className="p-8 text-center bg-slate-950 border border-slate-800 rounded-xl space-y-3">
+                      <div className="w-12 h-12 rounded-full bg-emerald-500/10 text-emerald-400 mx-auto flex items-center justify-center">
+                        <CheckCircle2 className="w-6 h-6" />
+                      </div>
+                      <h3 className="text-sm font-bold text-white">Nenhum item sem match!</h3>
+                      <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                        Todas as aprovações deste documento foram cruzadas com sucesso com os itens de estoque da G&B.
+                      </p>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-amber-950/40 p-4 rounded-xl border border-amber-800/60">
+                        <div className="flex items-center space-x-3">
+                          <AlertTriangle className="w-6 h-6 text-amber-400 shrink-0" />
+                          <div>
+                            <h3 className="text-sm font-bold text-amber-200">
+                              Aprovações sem match ({unmatchedItems.length})
+                            </h3>
+                            <p className="text-xs text-amber-300/80">
+                              Itens do PDF sem correspondência automática no estoque. Escolha na lista de itens do fornecedor e clique em Vincular.
+                            </p>
+                          </div>
                         </div>
 
-                        <p className="text-xs text-slate-100 font-semibold">
-                          {un.descricaoProduto}
-                        </p>
-
-                        {/* Manual Linking Selector */}
-                        <div className="pt-2 flex flex-col sm:flex-row sm:items-center gap-2 text-xs">
-                          <span className="text-slate-300 font-medium shrink-0">Vincular manualmente a um item do estoque:</span>
-                          <select
-                            onChange={e => {
-                              if (e.target.value) {
-                                handleManualLinkStockItem(unIdx, e.target.value);
-                              }
-                            }}
-                            defaultValue=""
-                            className="bg-slate-950 border border-slate-700 text-slate-100 text-xs rounded-lg px-2.5 py-1.5 focus:ring-amber-500 focus:border-amber-500"
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={handleDownloadUnmatchedCsv}
+                            className="inline-flex items-center space-x-1.5 px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-slate-200 border border-slate-700 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
                           >
-                            <option value="">Selecione um item do estoque...</option>
-                            {stockItems
-                              .map((item, originalIdx) => ({ item, originalIdx }))
-                              .filter(({ item }) => item.fornecedor?.toLowerCase().includes('g&b') || item.fornecedor?.toLowerCase().includes('gb'))
-                              .map(({ item, originalIdx }) => (
-                                <option key={`gb-stock-opt-${item.idStock || 'item'}-${originalIdx}`} value={`${originalIdx}`}>
-                                  {item.idStock} - {item.descricao ? item.descricao.slice(0, 35) : ''}... - {item.valorTotal || item.valorUnitario || 'R$ 0,00'} ({item.statusDevolucao || 'Sem status'})
-                                </option>
-                              ))}
-                          </select>
+                            <FileText className="w-3.5 h-3.5 text-sky-400" />
+                            <span>Baixar CSV</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleDownloadUnmatchedPdf}
+                            className="inline-flex items-center space-x-1.5 px-3 py-1.5 bg-sky-600 hover:bg-sky-500 text-white rounded-lg text-xs font-semibold transition-colors cursor-pointer shadow-sm"
+                          >
+                            <FileText className="w-3.5 h-3.5 text-white" />
+                            <span>Baixar PDF</span>
+                          </button>
                         </div>
                       </div>
-                    ))}
-                  </div>
+
+                      <div className="space-y-3">
+                        {unmatchedItems.map((un, unIdx) => {
+                          const selectedStockId = unmatchedSelections[unIdx] || '';
+                          return (
+                            <div 
+                              key={`unmatched-${unIdx}`}
+                              className="p-4 bg-slate-900 border border-amber-500/30 rounded-xl space-y-3 shadow-md"
+                            >
+                              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs bg-slate-950 p-3 rounded-lg border border-slate-800">
+                                <div>
+                                  <span className="text-slate-400 text-[10px] block font-semibold">NÚMERO DA APROVAÇÃO</span>
+                                  <strong className="text-rose-400 font-mono text-sm">{un.autorizacao || '—'}</strong>
+                                </div>
+                                <div>
+                                  <span className="text-slate-400 text-[10px] block font-semibold">CÓDIGO DA PEÇA</span>
+                                  <strong className="text-slate-200 font-mono">{un.codigoProduto || '—'}</strong>
+                                </div>
+                                <div>
+                                  <span className="text-slate-400 text-[10px] block font-semibold">VALOR TOTAL</span>
+                                  <strong className="text-emerald-400">R$ {un.valorTotal.toFixed(2).replace('.', ',')}</strong>
+                                </div>
+                                <div>
+                                  <span className="text-slate-400 text-[10px] block font-semibold">NF SUGERIDA</span>
+                                  <strong className="text-amber-300 font-mono">{un.numeroNota || '—'}</strong>
+                                </div>
+                              </div>
+
+                              <div>
+                                <span className="text-slate-400 text-[10px] block font-semibold">DESCRIÇÃO DA PEÇA NO PDF</span>
+                                <p className="text-xs text-white font-bold mt-0.5">
+                                  {un.descricaoProduto}
+                                </p>
+                              </div>
+
+                              {/* Manual Linking Selector, Vincular, and Excluir Buttons */}
+                              <div className="pt-2 flex flex-col sm:flex-row items-stretch sm:items-center gap-2 text-xs">
+                                <select
+                                  value={selectedStockId}
+                                  onChange={e => setUnmatchedSelections(prev => ({ ...prev, [unIdx]: e.target.value }))}
+                                  className="flex-1 bg-slate-950 border border-slate-700 text-slate-100 text-xs rounded-lg px-3 py-2 focus:ring-amber-500 focus:border-amber-500"
+                                >
+                                  <option value="">Selecione um item do estoque (G&B ou Mecanizou)...</option>
+                                  {stockItems
+                                    .map((item, originalIdx) => ({ item, originalIdx }))
+                                    .filter(({ item }) => {
+                                      const forn = (item.fornecedor || '').toLowerCase();
+                                      const filial = (item.novoFornecedorFilial || '').toLowerCase();
+                                      return forn.includes('g&b') || forn.includes('gb') || filial.includes('g&b') || filial.includes('gb') || forn.includes('mecanizou') || filial.includes('mecanizou');
+                                    })
+                                    .map(({ item, originalIdx }) => (
+                                      <option key={`gb-stock-opt-${item.idStock || 'item'}-${originalIdx}`} value={`${originalIdx}`}>
+                                        {item.idStock} - {item.descricao ? item.descricao.slice(0, 40) : ''}... - {item.valorTotal || item.valorUnitario || 'R$ 0,00'} ({item.statusDevolucao || 'Sem status'})
+                                      </option>
+                                    ))}
+                                </select>
+                                <button
+                                  type="button"
+                                  disabled={!selectedStockId}
+                                  onClick={() => {
+                                    if (selectedStockId) {
+                                      handleManualLinkStockItem(unIdx, selectedStockId);
+                                    }
+                                  }}
+                                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white font-bold rounded-lg text-xs transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow"
+                                >
+                                  <Check className="w-4 h-4" />
+                                  <span>Vincular</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveUnmatchedItem(unIdx)}
+                                  className="px-3 py-2 bg-rose-950/60 hover:bg-rose-900 text-rose-300 border border-rose-800/80 font-bold rounded-lg text-xs transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow"
+                                  title="Excluir esta aprovação pendente"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                  <span>Excluir</span>
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </>
+                  )}
                 </div>
               )}
             </div>
@@ -865,14 +1103,14 @@ export const GbApprovalModal: React.FC<GbApprovalModalProps> = ({
           )}
         </div>
 
-        {/* Modal Footer */}
+        {/* Modal Footer (Sticky / Frozen at bottom) */}
         {step === 'review' && (
-          <div className="flex items-center justify-between px-6 py-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/70">
+          <div className="sticky bottom-0 z-30 flex items-center justify-between px-6 py-4 border-t border-slate-800 bg-slate-950/95 backdrop-blur-md shadow-2xl">
             <button
               type="button"
               onClick={handleReset}
               disabled={isProcessing}
-              className="px-4 py-2 text-xs font-semibold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white rounded-xl border border-slate-300 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer disabled:opacity-50"
+              className="px-4 py-2 text-xs font-semibold text-slate-400 hover:text-white rounded-xl border border-slate-800 hover:bg-slate-900 transition-colors cursor-pointer disabled:opacity-50"
             >
               Voltar / Subir Outro PDF
             </button>
@@ -882,7 +1120,7 @@ export const GbApprovalModal: React.FC<GbApprovalModalProps> = ({
                 type="button"
                 onClick={handleClose}
                 disabled={isProcessing}
-                className="px-4 py-2 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white rounded-xl border border-slate-300 dark:border-slate-700/80 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer disabled:opacity-50"
+                className="px-4 py-2 text-xs font-semibold text-slate-300 hover:text-white rounded-xl border border-slate-700 hover:bg-slate-900 transition-colors cursor-pointer disabled:opacity-50"
               >
                 Cancelar
               </button>

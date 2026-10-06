@@ -203,9 +203,11 @@ export default function App() {
     try {
       const current = getItemOverrides();
       updatedList.forEach(item => {
-        if (!item.idStock) return;
-        current[item.idStock] = {
-          ...(current[item.idStock] || {}),
+        const rawId = item.idStock || item.codigo;
+        if (!rawId) return;
+        const key = String(rawId).trim().toLowerCase();
+        current[key] = {
+          ...(current[key] || {}),
           statusDevolucao: item.statusDevolucao,
           obsStatusDevolucao: item.obsStatusDevolucao,
           observacoesGerais: item.observacoesGerais,
@@ -227,8 +229,12 @@ export default function App() {
   const applyOverridesToData = (dataList: StockItem[]): StockItem[] => {
     const overrides = getItemOverrides();
     return dataList.map(item => {
-      if (!item.idStock || !overrides[item.idStock]) return item;
-      const ov = overrides[item.idStock];
+      const rawId = item.idStock || item.codigo;
+      if (!rawId) return item;
+      const cleanKey = String(rawId).trim().toLowerCase();
+      const noPunctKey = cleanKey.replace(/[^0-9a-z]/g, "");
+      const ov = overrides[cleanKey] || overrides[noPunctKey] || overrides[String(item.idStock || '').trim()];
+      if (!ov) return item;
       return {
         ...item,
         statusDevolucao: ov.statusDevolucao !== undefined ? ov.statusDevolucao : item.statusDevolucao,

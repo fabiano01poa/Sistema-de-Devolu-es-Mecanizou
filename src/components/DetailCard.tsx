@@ -706,66 +706,6 @@ export const DetailCard: React.FC<DetailCardProps> = ({
           </form>
         )}
 
-        {/* Banners: Purple & Blue Alert Boxes with High Contrast Text */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className={`rounded-xl p-4 flex items-start space-x-3.5 shadow-lg border-2 ${
-            isLight 
-              ? 'bg-purple-50 border-purple-300 text-slate-900' 
-              : 'bg-[#241038] border-purple-600/80 text-purple-100'
-          }`}>
-            <div className={`p-2.5 rounded-lg mt-0.5 shadow-inner ${
-              isLight ? 'bg-purple-200 text-purple-800' : 'bg-purple-900 text-purple-200'
-            }`}>
-              <RefreshCw className="w-5 h-5" />
-            </div>
-            <div className="flex-1">
-              <h3 className={`text-sm font-extrabold tracking-wide flex items-center gap-2 ${
-                isLight ? 'text-purple-950' : 'text-purple-100'
-              }`}>
-                <span>{isExchange ? 'Cliente deseja TROCAR a peça' : `Status Devolução: ${item.statusDevolucao || 'Em Processamento'}`}</span>
-                {isFinalized && (
-                  <span className={`text-[10px] px-2 py-0.5 rounded border font-bold ${
-                    isLight ? 'bg-emerald-100 text-emerald-800 border-emerald-300' : 'bg-emerald-950 text-emerald-200 border-emerald-600'
-                  }`}>
-                    Contagem Parada
-                  </span>
-                )}
-              </h3>
-              <p className={`text-xs font-medium mt-1 leading-relaxed ${
-                isLight ? 'text-purple-900' : 'text-purple-200'
-              }`}>
-                {isExchange
-                  ? 'Esta solicitação é uma troca. O estorno será liberado assim que aprovado.'
-                  : `Processo sob status "${item.statusDevolucao || 'N/A'}". Verifique as colunas de status e observações abaixo.`}
-              </p>
-            </div>
-          </div>
-
-          <div className={`rounded-xl p-4 flex items-start space-x-3.5 shadow-lg border-2 ${
-            isLight 
-              ? 'bg-blue-50 border-blue-300 text-slate-900' 
-              : 'bg-[#0b2447] border-blue-600/80 text-blue-100'
-          }`}>
-            <div className={`p-2.5 rounded-lg mt-0.5 shadow-inner ${
-              isLight ? 'bg-blue-200 text-blue-800' : 'bg-blue-900 text-blue-200'
-            }`}>
-              <AlertCircle className="w-5 h-5" />
-            </div>
-            <div className="flex-1">
-              <h3 className={`text-sm font-extrabold tracking-wide ${
-                isLight ? 'text-blue-950' : 'text-blue-100'
-              }`}>
-                {item.obsNotaFiscal ? 'Atenção Observação Nota Fiscal' : 'Informações da Nota Fiscal e Pagamento'}
-              </h3>
-              <p className={`text-xs font-medium mt-1 leading-relaxed ${
-                isLight ? 'text-blue-900' : 'text-blue-200'
-              }`}>
-                {item.obsNotaFiscal || 'Verifique se a fatura foi paga antes de solicitar reembolso.'}
-              </p>
-            </div>
-          </div>
-        </div>
-
         {/* GROUPED INFORMATION BLOCKS */}
         <div className="space-y-6">
 
@@ -852,34 +792,19 @@ export const DetailCard: React.FC<DetailCardProps> = ({
                 </div>
               </div>
 
-              {/* Protocolo */}
+              {/* Status de Negociação */}
               <div className={`space-y-1 p-3.5 rounded-xl border shadow-sm ${
-                isLight ? 'bg-white border-slate-200' : 'bg-slate-950 border-slate-700/80'
+                isLight ? 'bg-indigo-50 border-indigo-200' : 'bg-indigo-950/70 border-indigo-700/80'
               }`}>
-                <div className={`text-xs font-bold tracking-wider uppercase flex items-center ${
-                  isLight ? 'text-slate-600' : 'text-slate-200'
+                <div className={`text-xs font-extrabold tracking-wider uppercase flex items-center ${
+                  isLight ? 'text-indigo-800' : 'text-indigo-300'
                 }`}>
-                  <FileText className={`w-3.5 h-3.5 mr-1.5 ${isLight ? 'text-amber-600' : 'text-amber-400'}`} /> PROTOCOLO
+                  <ShieldCheck className={`w-3.5 h-3.5 mr-1.5 ${isLight ? 'text-indigo-700' : 'text-indigo-400'}`} /> STATUS DE NEGOCIAÇÃO
                 </div>
-                <div className="flex items-center space-x-2">
-                  <span className={`text-sm font-extrabold tracking-wide font-mono ${
-                    isLight ? 'text-amber-700' : 'text-amber-300'
-                  }`}>
-                    {item.protocolo || '—'}
-                  </span>
-                  {item.protocolo && (
-                    <button
-                      onClick={() => copyToClipboard(item.protocolo!, 'protocolo')}
-                      className={`p-1 transition-colors ${isLight ? 'text-slate-500 hover:text-slate-900' : 'text-slate-300 hover:text-white'}`}
-                      title="Copiar Protocolo"
-                    >
-                      {copiedField === 'protocolo' ? (
-                        <Check className="w-4 h-4 text-emerald-500" />
-                      ) : (
-                        <Copy className="w-3.5 h-3.5" />
-                      )}
-                    </button>
-                  )}
+                <div className={`text-sm sm:text-base font-extrabold ${
+                  isLight ? 'text-indigo-950' : 'text-indigo-100'
+                }`}>
+                  {item.statusDevolucao || 'A negociar'}
                 </div>
               </div>
 
@@ -1005,6 +930,98 @@ export const DetailCard: React.FC<DetailCardProps> = ({
                   }`}>
                     Em estoque físico
                   </span>
+                </div>
+              </div>
+
+              {/* Obs Nota Fiscal (Placed below Quant. em Estoque) */}
+              <div className={`space-y-1 p-3.5 rounded-xl border shadow-sm md:col-span-3 ${
+                isLight ? 'bg-amber-50/70 border-amber-200' : 'bg-amber-950/40 border-amber-700/80'
+              }`}>
+                <div className={`text-xs font-bold tracking-wider uppercase flex items-center ${
+                  isLight ? 'text-amber-800' : 'text-amber-300'
+                }`}>
+                  <FileText className={`w-3.5 h-3.5 mr-1.5 ${isLight ? 'text-amber-600' : 'text-amber-400'}`} /> OBS NOTA FISCAL
+                </div>
+                <div className={`text-xs sm:text-sm font-medium leading-relaxed font-mono ${
+                  isLight ? 'text-amber-950' : 'text-amber-100'
+                }`}>
+                  {item.obsNotaFiscal || 'Nenhuma observação de Nota Fiscal cadastrada.'}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* BLOCK 3: DADOS DO FORNECEDOR (Moved up right after Block 1) */}
+          <div className={`border rounded-2xl p-4 sm:p-5 space-y-4 shadow-xl ${
+            isLight ? 'bg-slate-50 border-slate-200' : 'bg-slate-900/90 border-slate-700'
+          }`}>
+            <div className={`flex items-center justify-between pb-3 border-b flex-wrap gap-2 ${
+              isLight ? 'border-slate-200' : 'border-slate-700/80'
+            }`}>
+              <div className={`flex items-center space-x-2 ${isLight ? 'text-indigo-600' : 'text-indigo-300'}`}>
+                <Truck className={`w-5 h-5 ${isLight ? 'text-indigo-600' : 'text-indigo-400'}`} />
+                <h3 className={`text-xs sm:text-sm font-extrabold uppercase tracking-wider ${
+                  isLight ? 'text-slate-900' : 'text-white'
+                }`}>
+                  Dados de Fornecedor & Processo
+                </h3>
+              </div>
+              {isAutomaticSupplierItem(item) && (
+                <span className={`inline-flex items-center px-3 py-1 rounded-md text-xs font-bold border shadow-sm ${
+                  isLight ? 'bg-amber-100 text-amber-800 border-amber-300' : 'bg-amber-950 text-amber-200 border-amber-600'
+                }`}>
+                  ⚡ Processo Automático
+                </span>
+              )}
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* Fornecedor */}
+              <div className={`space-y-1 p-3.5 rounded-xl border shadow-sm ${
+                isLight ? 'bg-white border-slate-200' : 'bg-slate-950 border-slate-700/80'
+              }`}>
+                <div className={`text-xs font-bold tracking-wider uppercase flex items-center ${
+                  isLight ? 'text-slate-600' : 'text-slate-200'
+                }`}>
+                  <Truck className={`w-3.5 h-3.5 mr-1.5 ${isLight ? 'text-indigo-600' : 'text-indigo-400'}`} /> FORNECEDOR
+                </div>
+                <div className={`text-sm font-bold ${isLight ? 'text-slate-900' : 'text-white'}`} title={item.fornecedor}>
+                  {item.fornecedor || '—'}
+                </div>
+              </div>
+
+              {/* Novo Fornecedor / Filial */}
+              <div className={`space-y-1 p-3.5 rounded-xl border shadow-sm ${
+                isLight ? 'bg-white border-slate-200' : 'bg-slate-950 border-slate-700/80'
+              }`}>
+                <div className={`text-xs font-bold tracking-wider uppercase flex items-center ${
+                  isLight ? 'text-slate-600' : 'text-slate-200'
+                }`}>
+                  <Building2 className={`w-3.5 h-3.5 mr-1.5 ${isLight ? 'text-indigo-600' : 'text-indigo-400'}`} /> NOVO FORNECEDOR / FILIAL
+                </div>
+                <div className={`text-sm font-bold flex items-center space-x-2 ${isLight ? 'text-slate-900' : 'text-white'}`} title={item.novoFornecedorFilial}>
+                  <span>{item.novoFornecedorFilial || '—'}</span>
+                  {isAutomaticSupplierItem(item) && (
+                    <span className={`text-[10px] border px-2 py-0.5 rounded font-extrabold ${
+                      isLight ? 'bg-amber-100 text-amber-800 border-amber-300' : 'bg-amber-950 text-amber-200 border-amber-700'
+                    }`}>
+                      Auto
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Fornecedor Original */}
+              <div className={`space-y-1 p-3.5 rounded-xl border shadow-sm ${
+                isLight ? 'bg-white border-slate-200' : 'bg-slate-950 border-slate-700/80'
+              }`}>
+                <div className={`text-xs font-bold tracking-wider uppercase flex items-center ${
+                  isLight ? 'text-slate-600' : 'text-slate-200'
+                }`}>
+                  <Truck className={`w-3.5 h-3.5 mr-1.5 ${isLight ? 'text-amber-600' : 'text-amber-400'}`} /> FORNECEDOR ORIGINAL
+                </div>
+                <div className={`text-sm font-bold ${isLight ? 'text-amber-700' : 'text-amber-300'}`}>
+                  {item.fornecedorOriginal || 'Mesmo da compra'}
                 </div>
               </div>
             </div>
@@ -1135,348 +1152,57 @@ export const DetailCard: React.FC<DetailCardProps> = ({
             </div>
           </div>
 
-          {/* BLOCK 3: DADOS DO FORNECEDOR */}
+          {/* Protocolo (Below Dados do Cliente) */}
           <div className={`border rounded-2xl p-4 sm:p-5 space-y-4 shadow-xl ${
             isLight ? 'bg-slate-50 border-slate-200' : 'bg-slate-900/90 border-slate-700'
           }`}>
-            <div className={`flex items-center justify-between pb-3 border-b flex-wrap gap-2 ${
+            <div className={`flex items-center space-x-2 pb-3 border-b ${
               isLight ? 'border-slate-200' : 'border-slate-700/80'
             }`}>
-              <div className={`flex items-center space-x-2 ${isLight ? 'text-indigo-600' : 'text-indigo-300'}`}>
-                <Truck className={`w-5 h-5 ${isLight ? 'text-indigo-600' : 'text-indigo-400'}`} />
-                <h3 className={`text-xs sm:text-sm font-extrabold uppercase tracking-wider ${
-                  isLight ? 'text-slate-900' : 'text-white'
-                }`}>
-                  Dados de Fornecedor & Processo
-                </h3>
-              </div>
-              {isAutomaticSupplierItem(item) && (
-                <span className={`inline-flex items-center px-3 py-1 rounded-md text-xs font-bold border shadow-sm ${
-                  isLight ? 'bg-amber-100 text-amber-800 border-amber-300' : 'bg-amber-950 text-amber-200 border-amber-600'
-                }`}>
-                  ⚡ Processo Automático
-                </span>
-              )}
+              <FileText className={`w-5 h-5 ${isLight ? 'text-amber-600' : 'text-amber-400'}`} />
+              <h3 className={`text-xs sm:text-sm font-extrabold uppercase tracking-wider ${
+                isLight ? 'text-slate-900' : 'text-white'
+              }`}>
+                Protocolo do Atendimento
+              </h3>
             </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {/* Fornecedor */}
-              <div className={`space-y-1 p-3.5 rounded-xl border shadow-sm ${
-                isLight ? 'bg-white border-slate-200' : 'bg-slate-950 border-slate-700/80'
+            <div className={`p-3.5 rounded-xl border shadow-sm flex items-center justify-between ${
+              isLight ? 'bg-white border-slate-200' : 'bg-slate-950 border-slate-700/80'
+            }`}>
+              <span className={`text-sm sm:text-base font-extrabold font-mono ${
+                isLight ? 'text-amber-700' : 'text-amber-300'
               }`}>
-                <div className={`text-xs font-bold tracking-wider uppercase flex items-center ${
-                  isLight ? 'text-slate-600' : 'text-slate-200'
-                }`}>
-                  <Truck className={`w-3.5 h-3.5 mr-1.5 ${isLight ? 'text-indigo-600' : 'text-indigo-400'}`} /> FORNECEDOR
-                </div>
-                <div className={`text-sm font-bold ${isLight ? 'text-slate-900' : 'text-white'}`} title={item.fornecedor}>
-                  {item.fornecedor || '—'}
-                </div>
-              </div>
-
-              {/* Novo Fornecedor / Filial */}
-              <div className={`space-y-1 p-3.5 rounded-xl border shadow-sm ${
-                isLight ? 'bg-white border-slate-200' : 'bg-slate-950 border-slate-700/80'
-              }`}>
-                <div className={`text-xs font-bold tracking-wider uppercase flex items-center ${
-                  isLight ? 'text-slate-600' : 'text-slate-200'
-                }`}>
-                  <Building2 className={`w-3.5 h-3.5 mr-1.5 ${isLight ? 'text-indigo-600' : 'text-indigo-400'}`} /> NOVO FORNECEDOR / FILIAL
-                </div>
-                <div className={`text-sm font-bold flex items-center space-x-2 ${isLight ? 'text-slate-900' : 'text-white'}`} title={item.novoFornecedorFilial}>
-                  <span>{item.novoFornecedorFilial || '—'}</span>
-                  {isAutomaticSupplierItem(item) && (
-                    <span className={`text-[10px] border px-2 py-0.5 rounded font-extrabold ${
-                      isLight ? 'bg-amber-100 text-amber-800 border-amber-300' : 'bg-amber-950 text-amber-200 border-amber-700'
-                    }`}>
-                      Auto
-                    </span>
+                {item.protocolo || 'Nenhum protocolo informado'}
+              </span>
+              {item.protocolo && (
+                <button
+                  onClick={() => copyToClipboard(item.protocolo!, 'protocolo')}
+                  className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    copiedField === 'protocolo'
+                      ? 'bg-emerald-100 text-emerald-700 border border-emerald-300 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-800'
+                      : isLight
+                        ? 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200'
+                        : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700'
+                  }`}
+                  title="Copiar Protocolo"
+                >
+                  {copiedField === 'protocolo' ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>Copiado!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3.5 h-3.5" />
+                      <span>Copiar</span>
+                    </>
                   )}
-                </div>
-              </div>
-
-              {/* Fornecedor Original */}
-              <div className={`space-y-1 p-3.5 rounded-xl border shadow-sm ${
-                isLight ? 'bg-white border-slate-200' : 'bg-slate-950 border-slate-700/80'
-              }`}>
-                <div className={`text-xs font-bold tracking-wider uppercase flex items-center ${
-                  isLight ? 'text-slate-600' : 'text-slate-200'
-                }`}>
-                  <Truck className={`w-3.5 h-3.5 mr-1.5 ${isLight ? 'text-amber-600' : 'text-amber-400'}`} /> FORNECEDOR ORIGINAL
-                </div>
-                <div className={`text-sm font-bold ${isLight ? 'text-amber-700' : 'text-amber-300'}`}>
-                  {item.fornecedorOriginal || 'Mesmo da compra'}
-                </div>
-              </div>
+                </button>
+              )}
             </div>
           </div>
 
-          {/* BLOCK 4: STATUS & OBSERVAÇÃO DO STATUS (LADO A LADO) + DOCUMENTOS FISCAIS */}
-          <div className={`border rounded-2xl p-4 sm:p-5 space-y-4 shadow-xl ${
-            isLight ? 'bg-slate-50 border-slate-200' : 'bg-slate-900/90 border-slate-700'
-          }`}>
-            <div className={`flex items-center justify-between pb-3 border-b flex-wrap gap-2 ${
-              isLight ? 'border-slate-200' : 'border-slate-700/80'
-            }`}>
-              <div className="flex items-center space-x-2">
-                <ShieldCheck className={`w-5 h-5 ${isLight ? 'text-emerald-600' : 'text-emerald-400'}`} />
-                <h3 className={`text-xs sm:text-sm font-extrabold uppercase tracking-wider ${
-                  isLight ? 'text-slate-900' : 'text-white'
-                }`}>
-                  Status, Observação do Status & Documentos Fiscais
-                </h3>
-              </div>
-              {statusFeedback && (
-                <span className={`text-xs px-3 py-1 rounded-full font-bold flex items-center gap-1.5 shadow-md animate-fadeIn border ${
-                  isLight ? 'text-emerald-800 bg-emerald-100 border-emerald-300' : 'text-emerald-100 bg-emerald-950 border-emerald-500'
-                }`}>
-                  <CheckCircle2 className={`w-4 h-4 ${isLight ? 'text-emerald-700' : 'text-emerald-300'}`} />
-                  {statusFeedback}
-                </span>
-              )}
-            </div>
 
-            {/* TWO COLUMNS SIDE BY SIDE FOR STATUS AND OBS STATUS */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              
-              {/* 1. STATUS DEVOLUÇÃO (MENU SUSPENSO & ATALHOS) */}
-              <div className={`space-y-2.5 p-4 rounded-xl border-2 shadow-md ${
-                isLight 
-                  ? 'bg-indigo-50/70 border-indigo-200 text-slate-900' 
-                  : 'bg-gradient-to-br from-indigo-950/80 to-slate-950 border-indigo-600/80 text-white'
-              }`}>
-                <div className={`text-xs font-extrabold tracking-wider uppercase flex items-center justify-between ${
-                  isLight ? 'text-indigo-900' : 'text-indigo-200'
-                }`}>
-                  <span className="flex items-center gap-1.5">
-                    <ShieldCheck className={`w-4 h-4 ${isLight ? 'text-indigo-600' : 'text-indigo-400'}`} /> STATUS DEVOLUÇÃO
-                  </span>
-                  <span className={`text-[11px] px-2.5 py-0.5 rounded border font-mono font-extrabold ${
-                    isFinalized 
-                      ? (isLight ? 'bg-emerald-100 text-emerald-800 border-emerald-300' : 'bg-emerald-950 text-emerald-200 border-emerald-600')
-                      : (isLight ? 'bg-indigo-100 text-indigo-800 border-indigo-300' : 'bg-indigo-950 text-indigo-200 border-indigo-600')
-                  }`}>
-                    {isFinalized ? 'Finalizado' : 'Em Aberto'}
-                  </span>
-                </div>
-                
-                <div>
-                  <select
-                    value={item.statusDevolucao || 'A negociar'}
-                    onChange={(e) => handleDirectStatusChange(e.target.value)}
-                    className={`w-full text-xs sm:text-sm font-bold rounded-xl px-3.5 py-2.5 outline-none cursor-pointer focus:ring-2 focus:ring-indigo-400 shadow-sm border-2 ${
-                      isLight 
-                        ? 'bg-white border-indigo-400 text-slate-900' 
-                        : 'bg-slate-900 border-indigo-500 text-white hover:border-indigo-400'
-                    }`}
-                    title="Selecione o Status de Devolução na lista suspensa"
-                  >
-                    {statusOptions.map(st => (
-                      <option key={`direct-status-opt-${st}`} value={st} className={isLight ? 'bg-white text-slate-900 font-semibold py-1' : 'bg-slate-900 text-white font-semibold py-1'}>
-                        {st}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Atalhos Rápidos para Status Devolução */}
-                <div className={`pt-1.5 border-t ${isLight ? 'border-indigo-200' : 'border-indigo-900/60'}`}>
-                  <span className={`text-[11px] block mb-1.5 font-bold uppercase tracking-wider ${
-                    isLight ? 'text-slate-600' : 'text-slate-300'
-                  }`}>
-                    Atalho Rápido:
-                  </span>
-                  <div className="flex flex-wrap gap-1.5">
-                    {statusOptions.slice(0, 6).map(st => {
-                      const isCurrent = item.statusDevolucao === st;
-                      return (
-                        <button
-                          key={`quick-st-chip-${st}`}
-                          type="button"
-                          onClick={() => handleDirectStatusChange(st)}
-                          className={`text-[11px] px-2.5 py-1 rounded-lg border font-bold transition-all ${
-                            isLight
-                              ? (isCurrent ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm' : 'bg-white text-slate-700 border-slate-300 hover:border-indigo-400 hover:text-indigo-700 hover:bg-indigo-50/60')
-                              : (isCurrent ? 'bg-indigo-600 text-white border-indigo-300 shadow-sm' : 'bg-slate-900 text-slate-200 border-slate-700 hover:border-indigo-400 hover:text-white hover:bg-slate-800')
-                          }`}
-                        >
-                          {st}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-
-              {/* 2. OBSERVAÇÃO DO STATUS DE DEVOLUÇÃO (MENU SUSPENSO & ATALHOS) */}
-              <div className={`space-y-2.5 p-4 rounded-xl border-2 shadow-md ${
-                isLight 
-                  ? 'bg-cyan-50/70 border-cyan-200 text-slate-900' 
-                  : 'bg-gradient-to-br from-cyan-950/80 to-slate-950 border-cyan-600/80 text-white'
-              }`}>
-                <div className={`text-xs font-extrabold tracking-wider uppercase flex items-center justify-between ${
-                  isLight ? 'text-cyan-900' : 'text-cyan-200'
-                }`}>
-                  <span className="flex items-center gap-1.5">
-                    <ListFilter className={`w-4 h-4 ${isLight ? 'text-cyan-600' : 'text-cyan-400'}`} /> OBSERVAÇÃO DO STATUS DE DEVOLUÇÃO
-                  </span>
-                  <span className={`text-[11px] px-2.5 py-0.5 rounded border font-mono font-bold ${
-                    isLight ? 'bg-cyan-100 text-cyan-800 border-cyan-300' : 'bg-cyan-950 text-cyan-200 border-cyan-700'
-                  }`}>
-                    Detalhe / Andamento
-                  </span>
-                </div>
-                
-                <div>
-                  <select
-                    value={item.obsStatusDevolucao || ''}
-                    onChange={(e) => handleDirectObsStatusChange(e.target.value)}
-                    className={`w-full text-xs sm:text-sm font-bold rounded-xl px-3.5 py-2.5 outline-none cursor-pointer focus:ring-2 focus:ring-cyan-400 shadow-sm border-2 ${
-                      isLight 
-                        ? 'bg-white border-cyan-400 text-slate-900' 
-                        : 'bg-slate-900 border-cyan-500 text-white hover:border-cyan-400'
-                    }`}
-                    title="Selecione a Observação do Status de Devolução na lista suspensa"
-                  >
-                    <option value="" className={isLight ? 'bg-white text-slate-500 font-semibold' : 'bg-slate-900 text-slate-400 font-semibold'}>
-                      -- Selecionar Observação de Status --
-                    </option>
-                    {obsStatusOptions.map(obs => (
-                      <option key={`direct-obs-opt-${obs}`} value={obs} className={isLight ? 'bg-white text-slate-900 font-semibold py-1' : 'bg-slate-900 text-white font-semibold py-1'}>
-                        {obs}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Atalhos Rápidos para Observação do Status */}
-                <div className={`pt-1.5 border-t ${isLight ? 'border-cyan-200' : 'border-cyan-900/60'}`}>
-                  <span className={`text-[11px] block mb-1.5 font-bold uppercase tracking-wider ${
-                    isLight ? 'text-slate-600' : 'text-slate-300'
-                  }`}>
-                    Atalho Rápido:
-                  </span>
-                  <div className="flex flex-wrap gap-1.5">
-                    {obsStatusOptions.slice(0, 4).map(obs => {
-                      const isCurrent = item.obsStatusDevolucao === obs;
-                      return (
-                        <button
-                          key={`quick-obs-chip-${obs}`}
-                          type="button"
-                          onClick={() => handleDirectObsStatusChange(obs)}
-                          className={`text-[11px] px-2.5 py-1 rounded-lg border font-bold transition-all ${
-                            isLight
-                              ? (isCurrent ? 'bg-cyan-600 text-white border-cyan-600 shadow-sm' : 'bg-white text-slate-700 border-slate-300 hover:border-cyan-400 hover:text-cyan-700 hover:bg-cyan-50/60')
-                              : (isCurrent ? 'bg-cyan-600 text-white border-cyan-300 shadow-sm' : 'bg-slate-900 text-slate-200 border-slate-700 hover:border-cyan-400 hover:text-white hover:bg-slate-800')
-                          }`}
-                        >
-                          {obs}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-
-            </div>
-
-            {/* NOTAS FISCAIS & DATAS */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 pt-2">
-              {/* NF Origem */}
-              <div className={`space-y-1 p-3.5 rounded-xl border shadow-sm ${
-                isLight ? 'bg-white border-slate-200' : 'bg-slate-950 border-slate-700/80'
-              }`}>
-                <div className={`text-xs font-bold tracking-wider uppercase flex items-center ${
-                  isLight ? 'text-slate-600' : 'text-slate-200'
-                }`}>
-                  <FileText className={`w-3.5 h-3.5 mr-1.5 ${isLight ? 'text-amber-600' : 'text-amber-400'}`} /> NOTA FISCAL ORIGEM
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className={`text-sm sm:text-base font-extrabold font-mono ${
-                    isLight ? 'text-amber-700' : 'text-amber-300'
-                  }`}>
-                    {cleanNotaFiscal(item.nfOrigem) || '—'}
-                  </span>
-                  {item.nfOrigem && (
-                    <button
-                      onClick={() => copyToClipboard(cleanNotaFiscal(item.nfOrigem) || '', 'nfOrigem')}
-                      className={`p-1 transition-colors ${isLight ? 'text-slate-500 hover:text-slate-900' : 'text-slate-300 hover:text-white'}`}
-                      title="Copiar NF Origem"
-                    >
-                      {copiedField === 'nfOrigem' ? (
-                        <Check className="w-4 h-4 text-emerald-500" />
-                      ) : (
-                        <Copy className="w-3.5 h-3.5" />
-                      )}
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              {/* NF Saída */}
-              <div className={`space-y-1 p-3.5 rounded-xl border shadow-sm ${
-                isLight ? 'bg-white border-slate-200' : 'bg-slate-950 border-slate-700/80'
-              }`}>
-                <div className={`text-xs font-bold tracking-wider uppercase flex items-center ${
-                  isLight ? 'text-slate-600' : 'text-slate-200'
-                }`}>
-                  <FileText className={`w-3.5 h-3.5 mr-1.5 ${isLight ? 'text-amber-600' : 'text-amber-400'}`} /> NOTA FISCAL DE SAÍDA
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className={`text-sm sm:text-base font-extrabold font-mono ${
-                    isLight ? 'text-amber-700' : 'text-amber-300'
-                  }`}>
-                    {item.notaFiscalSaida && item.notaFiscalSaida.trim() !== '' ? cleanNotaFiscal(item.notaFiscalSaida) : 'Não cadastrada'}
-                  </span>
-                  {item.notaFiscalSaida && item.notaFiscalSaida.trim() !== '' && (
-                    <button
-                      onClick={() => copyToClipboard(item.notaFiscalSaida || '', 'nfSaida')}
-                      className={`p-1 transition-colors ${isLight ? 'text-slate-500 hover:text-slate-900' : 'text-slate-300 hover:text-white'}`}
-                      title="Copiar NF Saída"
-                    >
-                      {copiedField === 'nfSaida' ? (
-                        <Check className="w-4 h-4 text-emerald-500" />
-                      ) : (
-                        <Copy className="w-3.5 h-3.5" />
-                      )}
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              {/* Data Compra */}
-              <div className={`space-y-1 p-3.5 rounded-xl border shadow-sm ${
-                isLight ? 'bg-white border-slate-200' : 'bg-slate-950 border-slate-700/80'
-              }`}>
-                <div className={`text-xs font-bold tracking-wider uppercase flex items-center ${
-                  isLight ? 'text-slate-600' : 'text-slate-200'
-                }`}>
-                  <Calendar className={`w-3.5 h-3.5 mr-1.5 ${isLight ? 'text-indigo-600' : 'text-indigo-400'}`} /> DATA DA COMPRA
-                </div>
-                <div className={`text-sm sm:text-base font-bold font-mono ${
-                  isLight ? 'text-slate-900' : 'text-white'
-                }`}>
-                  {item.dataCompra || 'Não informada'}
-                </div>
-              </div>
-
-              {/* Data Última Alteração */}
-              <div className={`space-y-1 p-3.5 rounded-xl border shadow-sm ${
-                isLight ? 'bg-white border-slate-200' : 'bg-slate-950 border-slate-700/80'
-              }`}>
-                <div className={`text-xs font-bold tracking-wider uppercase flex items-center ${
-                  isLight ? 'text-slate-600' : 'text-slate-200'
-                }`}>
-                  <Clock className={`w-3.5 h-3.5 mr-1.5 ${isLight ? 'text-indigo-600' : 'text-indigo-400'}`} /> DATA ÚLTIMA ALTERAÇÃO
-                </div>
-                <div className={`text-xs sm:text-sm font-bold font-mono ${
-                  isLight ? 'text-indigo-700' : 'text-indigo-200'
-                }`}>
-                  {item.dataUltimaAlteracao || 'Sem alterações recentes'}
-                </div>
-              </div>
-            </div>
-          </div>
 
           {/* BLOCK 6: DATAS, TIMELINE & HISTÓRICO */}
           <div className={`border rounded-2xl p-4 sm:p-5 space-y-5 shadow-xl ${

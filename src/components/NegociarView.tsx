@@ -37,6 +37,7 @@ import { GbApprovalModal } from './GbApprovalModal';
 import { GrupoRealApprovalModal } from './GrupoRealApprovalModal';
 import { CompelApprovalModal } from './CompelApprovalModal';
 import { DinparApprovalModal } from './DinparApprovalModal';
+import { MetalsystemApprovalModal } from './MetalsystemApprovalModal';
 import { isGrupoRealItem } from '../utils/approvalParser';
 import { SupplierConditionsModal, OFFICIAL_SUPPLIER_RULES } from './SupplierConditionsModal';
 import { 
@@ -139,6 +140,16 @@ export const NegociarView: React.FC<NegociarViewProps> = ({ items = [], onSelect
     return (items || []).filter(i => isDevolucaoItem(i));
   }, [items]);
 
+  const availableObsStatusList = useMemo(() => {
+    const set = new Set<string>(OFFICIAL_OBS_STATUS_DEVOLUCAO);
+    (items || []).forEach(i => {
+      if (i.obsStatusDevolucao && i.obsStatusDevolucao.trim()) {
+        set.add(i.obsStatusDevolucao.trim());
+      }
+    });
+    return Array.from(set).sort();
+  }, [items]);
+
   // Selection & Bulk Action State
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
   const [isBulkModalOpen, setIsBulkModalOpen] = useState<boolean>(false);
@@ -167,6 +178,7 @@ export const NegociarView: React.FC<NegociarViewProps> = ({ items = [], onSelect
   const [isGrupoRealModalOpen, setIsGrupoRealModalOpen] = useState<boolean>(false);
   const [isCompelModalOpen, setIsCompelModalOpen] = useState<boolean>(false);
   const [isDinparModalOpen, setIsDinparModalOpen] = useState<boolean>(false);
+  const [isMetalsystemModalOpen, setIsMetalsystemModalOpen] = useState<boolean>(false);
   const [isAutomationsBarVisible, setIsAutomationsBarVisible] = useState<boolean>(() => {
     try {
       const saved = localStorage.getItem('automations_bar_visible');
@@ -219,6 +231,15 @@ export const NegociarView: React.FC<NegociarViewProps> = ({ items = [], onSelect
     }
     setBulkSuccessBanner(`Automação Dinpar: ${updatedItems.length} item(ns) atualizado(s) com sucesso para "Emitir NF"!`);
     setIsDinparModalOpen(false);
+    setTimeout(() => setBulkSuccessBanner(null), 6000);
+  };
+
+  const handleMetalsystemApplyChanges = (updatedItems: StockItem[]) => {
+    if (onBatchUpdateStatus) {
+      onBatchUpdateStatus(updatedItems);
+    }
+    setBulkSuccessBanner(`Automação Metalsystem: ${updatedItems.length} item(ns) atualizado(s) com sucesso para "Emitir NF"!`);
+    setIsMetalsystemModalOpen(false);
     setTimeout(() => setBulkSuccessBanner(null), 6000);
   };
 
@@ -2503,7 +2524,7 @@ export const NegociarView: React.FC<NegociarViewProps> = ({ items = [], onSelect
                       }}
                       className="w-full bg-slate-900 border border-slate-700 focus:border-indigo-500 text-xs text-slate-100 rounded-xl p-2.5 outline-none font-medium"
                     >
-                      {OFFICIAL_OBS_STATUS_DEVOLUCAO.map((obs, oIdx) => (
+                      {availableObsStatusList.map((obs, oIdx) => (
                         <option key={`bulk-obs-st-${obs}-${oIdx}`} value={obs}>
                           {obs}
                         </option>

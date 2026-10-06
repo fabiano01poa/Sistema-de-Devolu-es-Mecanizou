@@ -71,15 +71,65 @@ export const CompelApprovalModal: React.FC<CompelApprovalModalProps> = ({
     document.body.removeChild(link);
   };
 
-  const handleSendUnmatchedEmail = () => {
+  const handleDownloadUnmatchedPdf = () => {
     if (unmatchedItems.length === 0) return;
-    const subject = encodeURIComponent('Relatório de Aprovações Pendentes Sem Match - Compel');
-    let bodyLines = 'Relatório de Aprovações Pendentes (Compel - Sem Match Automático):\n\n';
-    unmatchedItems.forEach((item, idx) => {
-      bodyLines += `${idx + 1}. AD: ${item.autorizacao} | NF: ${item.numeroNota} | Produto: ${item.descricaoProduto} | Valor: R$ ${(item.valorTotal || 0).toFixed(2)} | Arquivo: ${item.fileName || 'N/A'}\n`;
-    });
-    const body = encodeURIComponent(bodyLines);
-    window.location.href = `mailto:logistica.sp2@compel.com.br?subject=${subject}&body=${body}`;
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+    
+    const htmlContent = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Relatório de Aprovações Pendentes (Sem Match) - Compel</title>
+        <style>
+          body { font-family: Arial, sans-serif; padding: 20px; color: #111; }
+          h2 { color: #333; border-bottom: 2px solid #ddd; padding-bottom: 8px; }
+          table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+          th, td { border: 1px solid #ccc; padding: 8px 12px; text-align: left; font-size: 12px; }
+          th { background-color: #f4f4f4; }
+          .total { margin-top: 15px; font-weight: bold; font-size: 14px; }
+        </style>
+      </head>
+      <body>
+        <h2>Relatório de Aprovações Pendentes - Compel Sem Match (${unmatchedItems.length} itens)</h2>
+        <p>Data de geração: ${new Date().toLocaleDateString('pt-BR')} ${new Date().toLocaleTimeString('pt-BR')}</p>
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Autorização</th>
+              <th>NF</th>
+              <th>Descrição do Produto</th>
+              <th>Valor Total</th>
+              <th>Arquivo Origem</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${unmatchedItems.map((item, i) => `
+              <tr>
+                <td>${i + 1}</td>
+                <td>${item.autorizacao || '—'}</td>
+                <td>${item.numeroNota || '—'}</td>
+                <td>${item.descricaoProduto || '—'}</td>
+                <td>R$ ${(item.valorTotal || 0).toFixed(2).replace('.', ',')}</td>
+                <td>${item.fileName || '—'}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+        <div class="total">
+          Total Pendente: R$ ${unmatchedItems.reduce((acc, item) => acc + (item.valorTotal || 0), 0).toFixed(2).replace('.', ',')}
+        </div>
+        <script>
+          window.onload = function() {
+            window.print();
+          };
+        </script>
+      </body>
+      </html>
+    `;
+    printWindow.document.write(htmlContent);
+    printWindow.document.close();
   };
 
   const handleManualLinkStockItem = (unmatchedIdx: number, stockIdentifier: string) => {
@@ -579,66 +629,93 @@ export const CompelApprovalModal: React.FC<CompelApprovalModalProps> = ({
                           ))}
                         </div>
 
-                        <div className="grid grid-cols-1 sm:grid-cols-4 gap-2 pt-2 text-xs border-t border-slate-200 dark:border-slate-800">
-                          <div className="space-y-0.5">
-                            <span className="text-[10px] font-bold uppercase text-slate-500 block">
-                              Status Devolução
-                            </span>
-                            <div className="flex items-center gap-1">
-                              <span className="line-through text-slate-400 text-[11px] truncate max-w-[80px]">
-                                {orig.statusDevolucao || '—'}
-                              </span>
-                              <ArrowRight className="w-3 h-3 text-sky-500 shrink-0" />
-                              <span className="font-bold text-emerald-600 dark:text-emerald-400 text-[11px]">
-                                {result.proposedStatus}
-                              </span>
-                            </div>
-                          </div>
-
-                          <div className="space-y-0.5">
-                            <span className="text-[10px] font-bold uppercase text-sky-600 dark:text-sky-400 block">
-                              Obs Nota Fiscal
-                            </span>
-                            {isEditing ? (
-                              <input 
-                                type="text"
-                                value={result.proposedObsNotaFiscal}
-                                onChange={(e) => handleUpdateProposed(idx, 'proposedObsNotaFiscal', e.target.value)}
-                                className="w-full text-[11px] p-1 rounded border bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700"
-                              />
-                            ) : (
-                              <span className="font-mono font-bold text-[11px] text-slate-800 dark:text-slate-200 block truncate">
-                                {result.proposedObsNotaFiscal}
-                              </span>
-                            )}
-                          </div>
-
-                          <div className="space-y-0.5">
-                            <span className="text-[10px] font-bold uppercase text-yellow-600 dark:text-yellow-400 block">
-                              Motivo (NF)
-                            </span>
-                            {isEditing ? (
-                              <input 
-                                type="text"
-                                value={result.proposedMotivo}
-                                onChange={(e) => handleUpdateProposed(idx, 'proposedMotivo', e.target.value)}
-                                className="w-full text-[11px] p-1 rounded border bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700"
-                              />
-                            ) : (
-                              <span className="font-mono font-bold text-[11px] text-slate-800 dark:text-slate-200 block truncate">
-                                {result.proposedMotivo}
-                              </span>
-                            )}
-                          </div>
-
-                          <div className="space-y-0.5">
-                            <span className="text-[10px] font-bold uppercase text-slate-500 block">
-                              Obs. Gerais
-                            </span>
-                            <span className="text-[11px] text-slate-700 dark:text-slate-300 block truncate">
-                              {result.proposedObservacoesGerais || '—'}
-                            </span>
-                          </div>
+                        {/* Side-by-Side Comparison Table */}
+                        <div className="pt-2 pb-2 overflow-x-auto">
+                          <table className="w-full text-left text-xs border-collapse rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 shadow-inner">
+                            <thead>
+                              <tr className="bg-slate-100 dark:bg-slate-900 text-slate-600 dark:text-slate-400 border-b border-slate-200 dark:border-slate-800 text-[11px]">
+                                <th className="p-2.5 font-bold uppercase tracking-wider w-1/4 text-slate-700 dark:text-slate-300">Campo Obrigatório</th>
+                                <th className="p-2.5 font-bold uppercase tracking-wider w-1/3 text-indigo-700 dark:text-indigo-300 bg-indigo-50/50 dark:bg-indigo-950/20">Planilha (Estoque)</th>
+                                <th className="p-2.5 font-bold uppercase tracking-wider w-1/3 text-rose-700 dark:text-rose-300 bg-rose-50/50 dark:bg-rose-950/20">Aprovação (PDF)</th>
+                                <th className="p-2.5 font-bold uppercase tracking-wider w-1/6 text-center text-slate-700 dark:text-slate-300">Match</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-200 dark:divide-slate-800 font-mono text-[11px] bg-white dark:bg-slate-950/60">
+                              {/* Código */}
+                              <tr className="hover:bg-slate-50 dark:hover:bg-slate-900/40">
+                                <td className="p-2.5 font-sans font-bold text-slate-700 dark:text-slate-300">Código / ID</td>
+                                <td className="p-2.5 text-indigo-800 dark:text-indigo-200 font-bold bg-indigo-50/30 dark:bg-indigo-950/10">
+                                  {orig.idStock || orig.codigo || '—'}
+                                </td>
+                                <td className="p-2.5 text-rose-800 dark:text-rose-200 font-bold bg-rose-50/30 dark:bg-rose-950/10">
+                                  {result.parsedItem?.codigoProduto || 'Não listado'}
+                                </td>
+                                <td className="p-2.5 text-center">
+                                  {result.confidenceScore >= 95 ? (
+                                    <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 rounded text-[10px] font-bold">100% Match</span>
+                                  ) : (
+                                    <span className="px-2 py-0.5 bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border border-amber-200 dark:border-amber-800 rounded text-[10px] font-bold">Parcial (~80%)</span>
+                                  )}
+                                </td>
+                              </tr>
+                              {/* Aprovação (AD) */}
+                              <tr className="hover:bg-slate-50 dark:hover:bg-slate-900/40">
+                                <td className="p-2.5 font-sans font-bold text-slate-700 dark:text-slate-300">Aprovação (AD)</td>
+                                <td className="p-2.5 text-slate-400 bg-indigo-50/30 dark:bg-indigo-950/10">—</td>
+                                <td className="p-2.5 text-rose-800 dark:text-rose-300 font-bold bg-rose-50/30 dark:bg-rose-950/10">AD: {result.parsedItem?.autorizacao || '—'}</td>
+                                <td className="p-2.5 text-center">
+                                  <span className="px-2 py-0.5 bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300 rounded text-[10px] font-bold">Documento</span>
+                                </td>
+                              </tr>
+                              {/* Descrição */}
+                              <tr className="hover:bg-slate-50 dark:hover:bg-slate-900/40">
+                                <td className="p-2.5 font-sans font-bold text-slate-700 dark:text-slate-300">Descrição da Peça</td>
+                                <td className="p-2.5 font-sans text-slate-800 dark:text-slate-200 font-medium bg-indigo-50/30 dark:bg-indigo-950/10">
+                                  {orig.descricao || '—'}
+                                </td>
+                                <td className="p-2.5 font-sans text-slate-800 dark:text-slate-200 font-medium bg-rose-50/30 dark:bg-rose-950/10">
+                                  {result.parsedItem?.descricaoProduto || '—'}
+                                </td>
+                                <td className="p-2.5 text-center">
+                                  <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 rounded text-[10px] font-bold">Compatível</span>
+                                </td>
+                              </tr>
+                              {/* Valor */}
+                              <tr className="hover:bg-slate-50 dark:hover:bg-slate-900/40">
+                                <td className="p-2.5 font-sans font-bold text-slate-700 dark:text-slate-300">Valor Total (R$)</td>
+                                <td className="p-2.5 text-emerald-700 dark:text-emerald-400 font-bold bg-indigo-50/30 dark:bg-indigo-950/10">
+                                  R$ {parseFloat(String(orig.valorTotal || orig.valorUnitario || 0)).toFixed(2).replace('.', ',')}
+                                </td>
+                                <td className="p-2.5 text-emerald-700 dark:text-emerald-400 font-bold bg-rose-50/30 dark:bg-rose-950/10">
+                                  R$ {(result.parsedItem?.valorTotal || 0).toFixed(2).replace('.', ',')}
+                                </td>
+                                <td className="p-2.5 text-center">
+                                  {Math.abs(parseFloat(String(orig.valorTotal || orig.valorUnitario || 0)) - (result.parsedItem?.valorTotal || 0)) < 0.1 ? (
+                                    <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 rounded text-[10px] font-bold">100% Match</span>
+                                  ) : (
+                                    <span className="px-2 py-0.5 bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 rounded text-[10px] font-bold">Ajuste Valor</span>
+                                  )}
+                                </td>
+                              </tr>
+                              {/* NF Origem vs NF Sugerida */}
+                              <tr className="hover:bg-slate-50 dark:hover:bg-slate-900/40">
+                                <td className="p-2.5 font-sans font-bold text-slate-700 dark:text-slate-300">NF Origem vs. NF Sugerida</td>
+                                <td className="p-2.5 text-amber-700 dark:text-amber-400 font-bold bg-indigo-50/30 dark:bg-indigo-950/10">
+                                  {orig.nfOrigem || orig.nf || 'Não informada'}
+                                </td>
+                                <td className="p-2.5 text-sky-700 dark:text-sky-300 font-bold bg-rose-50/30 dark:bg-rose-950/10">
+                                  {result.parsedItem?.numeroNota || 'Não extraída'}
+                                </td>
+                                <td className="p-2.5 text-center">
+                                  {orig.nfOrigem && result.parsedItem?.numeroNota && (orig.nfOrigem.includes(result.parsedItem.numeroNota) || result.parsedItem.numeroNota.includes(orig.nfOrigem)) ? (
+                                    <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 rounded text-[10px] font-bold">100% Match</span>
+                                  ) : (
+                                    <span className="px-2 py-0.5 bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 rounded text-[10px] font-bold">Match Parcial</span>
+                                  )}
+                                </td>
+                              </tr>
+                            </tbody>
+                          </table>
                         </div>
                       </div>
                     </div>
@@ -668,11 +745,11 @@ export const CompelApprovalModal: React.FC<CompelApprovalModalProps> = ({
                     </button>
                     <button
                       type="button"
-                      onClick={handleSendUnmatchedEmail}
+                      onClick={handleDownloadUnmatchedPdf}
                       className="inline-flex items-center space-x-1.5 px-3 py-1.5 bg-sky-600 hover:bg-sky-500 text-white rounded-lg text-xs font-semibold transition-colors cursor-pointer shadow-sm"
                     >
-                      <Mail className="w-3.5 h-3.5 text-white" />
-                      <span>Enviar por E-mail</span>
+                      <FileText className="w-3.5 h-3.5 text-white" />
+                      <span>Baixar PDF</span>
                     </button>
                   </div>
                 </div>

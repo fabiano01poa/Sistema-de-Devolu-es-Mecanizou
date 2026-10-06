@@ -15,7 +15,8 @@ import {
   Info,
   ShieldCheck,
   Building2,
-  Mail
+  Mail,
+  Trash2
 } from 'lucide-react';
 import { StockItem } from '../types';
 import { 
@@ -114,6 +115,10 @@ export const GrupoRealApprovalModal: React.FC<GrupoRealApprovalModalProps> = ({
       next.add(matchedResults.length);
       return next;
     });
+    setUnmatchedItems(prev => prev.filter((_, idx) => idx !== unmatchedIdx));
+  };
+
+  const handleRemoveUnmatchedItem = (unmatchedIdx: number) => {
     setUnmatchedItems(prev => prev.filter((_, idx) => idx !== unmatchedIdx));
   };
 
@@ -602,80 +607,93 @@ export const GrupoRealApprovalModal: React.FC<GrupoRealApprovalModalProps> = ({
                           ))}
                         </div>
 
-                        {/* Change Preview */}
-                        <div className="grid grid-cols-1 sm:grid-cols-4 gap-2 pt-2 text-xs border-t border-slate-200 dark:border-slate-800">
-                          {/* Status */}
-                          <div className="space-y-0.5">
-                            <span className="text-[10px] font-bold uppercase text-slate-500 block">
-                              Status Devolução
-                            </span>
-                            <div className="flex items-center gap-1">
-                              <span className="line-through text-slate-400 text-[11px] truncate max-w-[80px]">
-                                {orig.statusDevolucao || '—'}
-                              </span>
-                              <ArrowRight className="w-3 h-3 text-amber-500 shrink-0" />
-                              <span className="font-bold text-emerald-600 dark:text-emerald-400 text-[11px]">
-                                {result.proposedStatus}
-                              </span>
-                            </div>
-                          </div>
-
-                          {/* Obs Nota Fiscal (Vermelho: Autorização) */}
-                          <div className="space-y-0.5">
-                            <span className="text-[10px] font-bold uppercase text-red-600 dark:text-red-400 block">
-                              Obs Nota Fiscal (Autorização)
-                            </span>
-                            {isEditing ? (
-                              <input 
-                                type="text"
-                                value={result.proposedObsNotaFiscal}
-                                onChange={(e) => handleUpdateProposed(idx, 'proposedObsNotaFiscal', e.target.value)}
-                                className="w-full text-[11px] p-1 rounded border bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700"
-                              />
-                            ) : (
-                              <span className="font-mono font-bold text-[11px] text-slate-800 dark:text-slate-200 block truncate">
-                                {result.proposedObsNotaFiscal}
-                              </span>
-                            )}
-                          </div>
-
-                          {/* Motivo (Amarelo: NF) */}
-                          <div className="space-y-0.5">
-                            <span className="text-[10px] font-bold uppercase text-yellow-600 dark:text-yellow-400 block">
-                              Motivo (NF Referenciada)
-                            </span>
-                            {isEditing ? (
-                              <input 
-                                type="text"
-                                value={result.proposedMotivo}
-                                onChange={(e) => handleUpdateProposed(idx, 'proposedMotivo', e.target.value)}
-                                className="w-full text-[11px] p-1 rounded border bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700"
-                              />
-                            ) : (
-                              <span className="font-mono font-bold text-[11px] text-slate-800 dark:text-slate-200 block truncate">
-                                {result.proposedMotivo}
-                              </span>
-                            )}
-                          </div>
-
-                          {/* Observações Gerais */}
-                          <div className="space-y-0.5">
-                            <span className="text-[10px] font-bold uppercase text-slate-500 block">
-                              Observações Gerais
-                            </span>
-                            {isEditing ? (
-                              <input 
-                                type="text"
-                                value={result.proposedObservacoesGerais}
-                                onChange={(e) => handleUpdateProposed(idx, 'proposedObservacoesGerais', e.target.value)}
-                                className="w-full text-[11px] p-1 rounded border bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700"
-                              />
-                            ) : (
-                              <span className="text-[11px] text-slate-700 dark:text-slate-300 block truncate">
-                                {result.proposedObservacoesGerais}
-                              </span>
-                            )}
-                          </div>
+                        {/* Side-by-Side Comparison Table */}
+                        <div className="pt-2 pb-2 overflow-x-auto">
+                          <table className="w-full text-left text-xs border-collapse rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 shadow-inner">
+                            <thead>
+                              <tr className="bg-slate-100 dark:bg-slate-900 text-slate-600 dark:text-slate-400 border-b border-slate-200 dark:border-slate-800 text-[11px]">
+                                <th className="p-2.5 font-bold uppercase tracking-wider w-1/4 text-slate-700 dark:text-slate-300">Campo Obrigatório</th>
+                                <th className="p-2.5 font-bold uppercase tracking-wider w-1/3 text-indigo-700 dark:text-indigo-300 bg-indigo-50/50 dark:bg-indigo-950/20">Planilha (Estoque)</th>
+                                <th className="p-2.5 font-bold uppercase tracking-wider w-1/3 text-rose-700 dark:text-rose-300 bg-rose-50/50 dark:bg-rose-950/20">Aprovação (PDF)</th>
+                                <th className="p-2.5 font-bold uppercase tracking-wider w-1/6 text-center text-slate-700 dark:text-slate-300">Match</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-200 dark:divide-slate-800 font-mono text-[11px] bg-white dark:bg-slate-950/60">
+                              {/* Código */}
+                              <tr className="hover:bg-slate-50 dark:hover:bg-slate-900/40">
+                                <td className="p-2.5 font-sans font-bold text-slate-700 dark:text-slate-300">Código / ID</td>
+                                <td className="p-2.5 text-indigo-800 dark:text-indigo-200 font-bold bg-indigo-50/30 dark:bg-indigo-950/10">
+                                  {orig.idStock || orig.codigo || '—'}
+                                </td>
+                                <td className="p-2.5 text-rose-800 dark:text-rose-200 font-bold bg-rose-50/30 dark:bg-rose-950/10">
+                                  {parsed.codigoProduto || 'Não listado'}
+                                </td>
+                                <td className="p-2.5 text-center">
+                                  {result.confidenceScore >= 95 ? (
+                                    <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 rounded text-[10px] font-bold">100% Match</span>
+                                  ) : (
+                                    <span className="px-2 py-0.5 bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border border-amber-200 dark:border-amber-800 rounded text-[10px] font-bold">Parcial (~80%)</span>
+                                  )}
+                                </td>
+                              </tr>
+                              {/* Aprovação (AD) */}
+                              <tr className="hover:bg-slate-50 dark:hover:bg-slate-900/40">
+                                <td className="p-2.5 font-sans font-bold text-slate-700 dark:text-slate-300">Aprovação (AD)</td>
+                                <td className="p-2.5 text-slate-400 bg-indigo-50/30 dark:bg-indigo-950/10">—</td>
+                                <td className="p-2.5 text-rose-800 dark:text-rose-300 font-bold bg-rose-50/30 dark:bg-rose-950/10">AD: {parsed.autorizacao || '—'}</td>
+                                <td className="p-2.5 text-center">
+                                  <span className="px-2 py-0.5 bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300 rounded text-[10px] font-bold">Documento</span>
+                                </td>
+                              </tr>
+                              {/* Descrição */}
+                              <tr className="hover:bg-slate-50 dark:hover:bg-slate-900/40">
+                                <td className="p-2.5 font-sans font-bold text-slate-700 dark:text-slate-300">Descrição da Peça</td>
+                                <td className="p-2.5 font-sans text-slate-800 dark:text-slate-200 font-medium bg-indigo-50/30 dark:bg-indigo-950/10">
+                                  {orig.descricao || '—'}
+                                </td>
+                                <td className="p-2.5 font-sans text-slate-800 dark:text-slate-200 font-medium bg-rose-50/30 dark:bg-rose-950/10">
+                                  {parsed.descricaoProduto || '—'}
+                                </td>
+                                <td className="p-2.5 text-center">
+                                  <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 rounded text-[10px] font-bold">Compatível</span>
+                                </td>
+                              </tr>
+                              {/* Valor */}
+                              <tr className="hover:bg-slate-50 dark:hover:bg-slate-900/40">
+                                <td className="p-2.5 font-sans font-bold text-slate-700 dark:text-slate-300">Valor Total (R$)</td>
+                                <td className="p-2.5 text-emerald-700 dark:text-emerald-400 font-bold bg-indigo-50/30 dark:bg-indigo-950/10">
+                                  R$ {parseFloat(String(orig.valorTotal || orig.valorUnitario || 0)).toFixed(2).replace('.', ',')}
+                                </td>
+                                <td className="p-2.5 text-emerald-700 dark:text-emerald-400 font-bold bg-rose-50/30 dark:bg-rose-950/10">
+                                  R$ {parsed.valorTotal.toFixed(2).replace('.', ',')}
+                                </td>
+                                <td className="p-2.5 text-center">
+                                  {Math.abs(parseFloat(String(orig.valorTotal || orig.valorUnitario || 0)) - parsed.valorTotal) < 0.1 ? (
+                                    <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 rounded text-[10px] font-bold">100% Match</span>
+                                  ) : (
+                                    <span className="px-2 py-0.5 bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 rounded text-[10px] font-bold">Ajuste Valor</span>
+                                  )}
+                                </td>
+                              </tr>
+                              {/* NF Origem vs NF Sugerida */}
+                              <tr className="hover:bg-slate-50 dark:hover:bg-slate-900/40">
+                                <td className="p-2.5 font-sans font-bold text-slate-700 dark:text-slate-300">NF Origem vs. NF Sugerida</td>
+                                <td className="p-2.5 text-amber-700 dark:text-amber-400 font-bold bg-indigo-50/30 dark:bg-indigo-950/10">
+                                  {orig.nfOrigem || orig.nf || 'Não informada'}
+                                </td>
+                                <td className="p-2.5 text-sky-700 dark:text-sky-300 font-bold bg-rose-50/30 dark:bg-rose-950/10">
+                                  {parsed.numeroNota || 'Não extraída'}
+                                </td>
+                                <td className="p-2.5 text-center">
+                                  {orig.nfOrigem && parsed.numeroNota && (orig.nfOrigem.includes(parsed.numeroNota) || parsed.numeroNota.includes(orig.nfOrigem)) ? (
+                                    <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 rounded text-[10px] font-bold">100% Match</span>
+                                  ) : (
+                                    <span className="px-2 py-0.5 bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 rounded text-[10px] font-bold">Match Parcial</span>
+                                  )}
+                                </td>
+                              </tr>
+                            </tbody>
+                          </table>
                         </div>
                       </div>
                     </div>
@@ -741,9 +759,8 @@ export const GrupoRealApprovalModal: React.FC<GrupoRealApprovalModalProps> = ({
                         {un.descricaoProduto}
                       </p>
 
-                      {/* Manual Linking Selector */}
-                      <div className="pt-2 flex flex-col sm:flex-row sm:items-center gap-2 text-xs">
-                        <span className="text-slate-700 dark:text-slate-300 font-medium shrink-0">Vincular manualmente a um item do estoque:</span>
+                      {/* Manual Linking Selector and Delete Button */}
+                      <div className="pt-2 flex flex-col sm:flex-row items-stretch sm:items-center gap-2 text-xs">
                         <select
                           onChange={e => {
                             if (e.target.value) {
@@ -751,18 +768,31 @@ export const GrupoRealApprovalModal: React.FC<GrupoRealApprovalModalProps> = ({
                             }
                           }}
                           defaultValue=""
-                          className="bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 text-xs rounded-lg px-2.5 py-1.5 focus:ring-amber-500 focus:border-amber-500"
+                          className="flex-1 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 text-xs rounded-lg px-2.5 py-1.5 focus:ring-amber-500 focus:border-amber-500"
                         >
-                          <option value="">Selecione um item do estoque...</option>
+                          <option value="">Selecione um item do estoque (Grupo Real ou Mecanizou)...</option>
                           {stockItems
                             .map((item, originalIdx) => ({ item, originalIdx }))
-                            .filter(({ item }) => item.fornecedor?.toLowerCase().includes('real') || item.novoFornecedorFilial)
+                            .filter(({ item }) => {
+                              const forn = (item.fornecedor || '').toLowerCase();
+                              const filial = (item.novoFornecedorFilial || '').toLowerCase();
+                              return forn.includes('real') || filial.includes('real') || forn.includes('mecanizou') || filial.includes('mecanizou');
+                            })
                             .map(({ item, originalIdx }) => (
                               <option key={`real-stock-opt-${item.idStock || 'item'}-${originalIdx}`} value={`${originalIdx}`}>
                                 {item.idStock} - {item.descricao ? item.descricao.slice(0, 35) : ''}... - {item.valorTotal || item.valorUnitario || 'R$ 0,00'} ({item.statusDevolucao || 'Sem status'})
                               </option>
                             ))}
                         </select>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveUnmatchedItem(unIdx)}
+                          className="px-3 py-1.5 bg-rose-50 dark:bg-rose-950/60 hover:bg-rose-100 dark:hover:bg-rose-900 text-rose-700 dark:text-rose-300 border border-rose-300 dark:border-rose-800 font-bold rounded-lg text-xs transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-sm"
+                          title="Excluir esta aprovação pendente"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>Excluir</span>
+                        </button>
                       </div>
                     </div>
                   ))}
