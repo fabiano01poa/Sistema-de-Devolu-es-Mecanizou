@@ -42,7 +42,6 @@ export default function App() {
   const [isSyncModalOpen, setIsSyncModalOpen] = useState<boolean>(false);
   const [selectedBrotherIds, setSelectedBrotherIds] = useState<Set<string>>(new Set());
   const [isBrotherModalOpen, setIsBrotherModalOpen] = useState<boolean>(false);
-  const [brotherQuantities, setBrotherQuantities] = useState<Record<string, string>>({});
 
   const handleToggleBrotherSelect = (idStock: string) => {
     setSelectedBrotherIds(prev => {
@@ -63,18 +62,6 @@ export default function App() {
         if (select) next.add(id);
         else next.delete(id);
       });
-      return next;
-    });
-  };
-
-  const handleUpdateBrotherQuantity = (idStock: string, qty: string) => {
-    setBrotherQuantities(prev => ({ ...prev, [idStock]: qty }));
-  };
-
-  const handleRemoveBrotherItem = (idStock: string) => {
-    setSelectedBrotherIds(prev => {
-      const next = new Set(prev);
-      next.delete(idStock);
       return next;
     });
   };
@@ -106,13 +93,8 @@ export default function App() {
   const [availableLocalidades, setAvailableLocalidades] = useState<string[]>([]);
 
   const selectedBrotherItems = useMemo(() => {
-    return items
-      .filter(i => selectedBrotherIds.has(i.idStock))
-      .map(i => ({
-        ...i,
-        quantEstoque: brotherQuantities[i.idStock] !== undefined ? brotherQuantities[i.idStock] : (i.quantEstoque || '1')
-      }));
-  }, [items, selectedBrotherIds, brotherQuantities]);
+    return items.filter(i => selectedBrotherIds.has(i.idStock));
+  }, [items, selectedBrotherIds]);
   const [totalSheetRows, setTotalSheetRows] = useState<number>(0);
 
   // Theme state (dark / light)
@@ -1010,7 +992,7 @@ export default function App() {
                 {/* Header above table with Etiquetas button */}
                 <div className="flex items-center justify-between px-1">
                   <span className={`text-xs ${isLight ? 'text-slate-600' : 'text-slate-400'} font-medium`}>
-                    {selectedBrotherIds.size > 0 ? `${selectedBrotherIds.size} ${selectedBrotherIds.size === 1 ? 'item selecionado' : 'itens selecionados'} para impressão` : 'Selecione itens abaixo para gerar etiquetas'}
+                    {selectedBrotherIds.size > 0 ? `${selectedBrotherIds.size} ${selectedBrotherIds.size === 1 ? 'item selecionado' : 'itens selecionados'} para impressão` : 'Selecione itens abaixo ou digite as etiquetas direto no formulário'}
                   </span>
                   <div className="flex items-center space-x-2">
                     {selectedBrotherIds.size > 0 && (
@@ -1023,7 +1005,6 @@ export default function App() {
                     )}
                     <button
                       onClick={() => setIsBrotherModalOpen(true)}
-                      disabled={selectedBrotherIds.size === 0}
                       className="px-4 py-2 bg-sky-600 hover:bg-sky-500 disabled:opacity-40 text-white font-bold text-xs rounded-xl shadow-md flex items-center space-x-2 transition-all cursor-pointer"
                     >
                       <Printer className="w-4 h-4" />
@@ -1133,9 +1114,6 @@ export default function App() {
         isOpen={isBrotherModalOpen}
         onClose={() => setIsBrotherModalOpen(false)}
         selectedItems={selectedBrotherItems}
-        onUpdateQuantity={handleUpdateBrotherQuantity}
-        onRemoveItem={handleRemoveBrotherItem}
-        webhookUrl={webhookUrl}
         theme={theme}
       />
     </div>
