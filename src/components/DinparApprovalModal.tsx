@@ -769,12 +769,15 @@ export const DinparApprovalModal: React.FC<DinparApprovalModalProps> = ({
                         </div>
                       </div>
 
-                      <p className="text-xs text-slate-900 dark:text-slate-100 font-semibold">
-                        {un.descricaoProduto}
-                      </p>
+                      <div>
+                        <span className="text-slate-500 dark:text-slate-400 text-[10px] block font-semibold">DESCRIÇÃO DA PEÇA NO PDF</span>
+                        <p className="text-xs text-slate-900 dark:text-slate-100 font-bold mt-0.5">
+                          {un.descricaoProduto}
+                        </p>
+                      </div>
 
                       <div className="pt-2 flex flex-col sm:flex-row sm:items-center gap-2 text-xs">
-                        <span className="text-slate-700 dark:text-slate-300 font-medium shrink-0">Vincular manualmente ao estoque:</span>
+                        <span className="text-slate-700 dark:text-slate-300 font-medium shrink-0">Vincular manualmente ao estoque (Em negociação):</span>
                         <select
                           onChange={e => {
                             if (e.target.value) {
@@ -784,13 +787,21 @@ export const DinparApprovalModal: React.FC<DinparApprovalModalProps> = ({
                           defaultValue=""
                           className="bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-100 text-xs rounded-lg px-2.5 py-1.5"
                         >
-                          <option value="">Selecione um item do estoque...</option>
+                          <option value="">Selecione um item do estoque Dinpar (Em negociação)...</option>
                           {stockItems
                             .map((item, originalIdx) => ({ item, originalIdx }))
-                            .filter(({ item }) => item.fornecedor?.toLowerCase().includes('dinpar'))
+                            .filter(({ item }) => {
+                              const forn = (item.fornecedor || '').toLowerCase();
+                              const filial = (item.novoFornecedorFilial || '').toLowerCase();
+                              const original = (item.fornecedorOriginal || '').toLowerCase();
+                              const statusDev = (item.statusDevolucao || '').toLowerCase();
+                              const isSupplier = forn.includes('dinpar') || filial.includes('dinpar') || original.includes('dinpar');
+                              const isEmNegociacao = statusDev.includes('negociação') || statusDev.includes('negociacao');
+                              return isSupplier && isEmNegociacao;
+                            })
                             .map(({ item, originalIdx }) => (
                               <option key={`dinpar-stock-opt-${item.idStock}-${originalIdx}`} value={`${originalIdx}`}>
-                                {item.idStock} - {item.descricao ? item.descricao.slice(0, 35) : ''}... - {item.valorTotal || item.valorUnitario || 'R$ 0,00'}
+                                {item.idStock} - {item.descricao ? item.descricao.slice(0, 35) : ''}... - {item.valorTotal || item.valorUnitario || 'R$ 0,00'} ({item.statusDevolucao || 'Sem status'})
                               </option>
                             ))}
                         </select>

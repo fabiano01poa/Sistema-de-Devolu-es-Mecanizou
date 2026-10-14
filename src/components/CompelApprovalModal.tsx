@@ -758,24 +758,51 @@ export const CompelApprovalModal: React.FC<CompelApprovalModalProps> = ({
                   {unmatchedItems.map((un, unIdx) => (
                     <div 
                       key={`compel-unmatched-${unIdx}`}
-                      className="p-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl space-y-2.5 shadow-sm"
+                      className="p-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl space-y-3 shadow-sm"
                     >
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-xs">
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs bg-slate-100 dark:bg-slate-950 p-3 rounded-lg border border-slate-200 dark:border-slate-800">
                         <div>
-                          <span className="font-mono font-bold text-sky-600 dark:text-sky-400">Espelho: {un.autorizacao}</span>
-                          <span className="mx-2 text-slate-400">•</span>
-                          <span className="text-amber-600 dark:text-amber-300 font-semibold">NF: {un.numeroNota || '—'}</span>
-                          <span className="mx-2 text-slate-400">•</span>
-                          <span className="text-emerald-600 dark:text-emerald-400 font-bold">R$ {un.valorTotal.toFixed(2).replace('.', ',')}</span>
+                          <span className="text-slate-500 dark:text-slate-400 text-[10px] block font-semibold">NÚMERO DA APROVAÇÃO</span>
+                          <strong className="text-rose-600 dark:text-rose-400 font-mono text-sm">{un.autorizacao || '—'}</strong>
+                        </div>
+                        <div>
+                          <span className="text-slate-500 dark:text-slate-400 text-[10px] block font-semibold">NF ORIGEM</span>
+                          <strong className="text-amber-600 dark:text-amber-300 font-mono">{un.numeroNota || '—'}</strong>
+                        </div>
+                        <div>
+                          <span className="text-slate-500 dark:text-slate-400 text-[10px] block font-semibold">DT. EMISSÃO</span>
+                          <strong className="text-emerald-600 dark:text-emerald-400 font-mono">{un.dataEmissao || '—'}</strong>
+                        </div>
+                        <div>
+                          <span className="text-slate-500 dark:text-slate-400 text-[10px] block font-semibold">QTDE</span>
+                          <strong className="text-slate-900 dark:text-white font-mono">{un.quantidade || 1}</strong>
                         </div>
                       </div>
 
-                      <p className="text-xs text-slate-900 dark:text-slate-100 font-semibold">
-                        {un.descricaoProduto}
-                      </p>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs bg-slate-100/60 dark:bg-slate-950/60 p-3 rounded-lg border border-slate-200 dark:border-slate-800">
+                        <div>
+                          <span className="text-slate-500 dark:text-slate-400 text-[10px] block font-semibold">CÓDIGO DA PEÇA</span>
+                          <strong className="text-indigo-600 dark:text-indigo-400 font-mono">{un.codigoProduto || '—'}</strong>
+                        </div>
+                        <div>
+                          <span className="text-slate-500 dark:text-slate-400 text-[10px] block font-semibold">VALOR UNITÁRIO</span>
+                          <strong className="text-slate-700 dark:text-slate-200">R$ {(un.valorUnitario || un.valorTotal || 0).toFixed(2).replace('.', ',')}</strong>
+                        </div>
+                        <div>
+                          <span className="text-slate-500 dark:text-slate-400 text-[10px] block font-semibold">VALOR TOTAL</span>
+                          <strong className="text-emerald-600 dark:text-emerald-400">R$ {(un.valorTotal || 0).toFixed(2).replace('.', ',')}</strong>
+                        </div>
+                      </div>
+
+                      <div>
+                        <span className="text-slate-500 dark:text-slate-400 text-[10px] block font-semibold">DESCRIÇÃO DA PEÇA NO PDF</span>
+                        <p className="text-xs text-slate-900 dark:text-slate-100 font-bold mt-0.5">
+                          {un.descricaoProduto}
+                        </p>
+                      </div>
 
                       <div className="pt-2 flex flex-col sm:flex-row sm:items-center gap-2 text-xs">
-                        <span className="text-slate-700 dark:text-slate-300 font-medium shrink-0">Vincular manualmente ao estoque:</span>
+                        <span className="text-slate-700 dark:text-slate-300 font-medium shrink-0">Vincular manualmente ao estoque (Em negociação):</span>
                         <select
                           onChange={e => {
                             if (e.target.value) {
@@ -785,13 +812,21 @@ export const CompelApprovalModal: React.FC<CompelApprovalModalProps> = ({
                           defaultValue=""
                           className="bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-100 text-xs rounded-lg px-2.5 py-1.5"
                         >
-                          <option value="">Selecione um item do estoque...</option>
+                          <option value="">Selecione um item do estoque Compel (Em negociação)...</option>
                           {stockItems
                             .map((item, originalIdx) => ({ item, originalIdx }))
-                            .filter(({ item }) => item.fornecedor?.toLowerCase().includes('compel'))
+                            .filter(({ item }) => {
+                              const forn = (item.fornecedor || '').toLowerCase();
+                              const filial = (item.novoFornecedorFilial || '').toLowerCase();
+                              const original = (item.fornecedorOriginal || '').toLowerCase();
+                              const statusDev = (item.statusDevolucao || '').toLowerCase();
+                              const isSupplier = forn.includes('compel') || filial.includes('compel') || original.includes('compel');
+                              const isEmNegociacao = statusDev.includes('negociação') || statusDev.includes('negociacao');
+                              return isSupplier && isEmNegociacao;
+                            })
                             .map(({ item, originalIdx }) => (
                               <option key={`compel-stock-opt-${item.idStock}-${originalIdx}`} value={`${originalIdx}`}>
-                                {item.idStock} - {item.descricao ? item.descricao.slice(0, 35) : ''}... - {item.valorTotal || item.valorUnitario || 'R$ 0,00'}
+                                {item.idStock} - {item.descricao ? item.descricao.slice(0, 35) : ''}... - {item.valorTotal || item.valorUnitario || 'R$ 0,00'} ({item.statusDevolucao || 'Sem status'})
                               </option>
                             ))}
                         </select>

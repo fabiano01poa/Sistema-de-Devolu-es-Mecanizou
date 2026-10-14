@@ -977,16 +977,31 @@ export const GbApprovalModal: React.FC<GbApprovalModalProps> = ({
                                   <strong className="text-rose-400 font-mono text-sm">{un.autorizacao || '—'}</strong>
                                 </div>
                                 <div>
+                                  <span className="text-slate-400 text-[10px] block font-semibold">NF SUGERIDA</span>
+                                  <strong className="text-amber-300 font-mono">{un.numeroNota || '—'}</strong>
+                                </div>
+                                <div>
+                                  <span className="text-slate-400 text-[10px] block font-semibold">DT. EMISSÃO</span>
+                                  <strong className="text-emerald-400 font-mono">{un.dataEmissao || '—'}</strong>
+                                </div>
+                                <div>
+                                  <span className="text-slate-400 text-[10px] block font-semibold">QTDE</span>
+                                  <strong className="text-white font-mono">{un.quantidade || 1}</strong>
+                                </div>
+                              </div>
+
+                              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs bg-slate-950/60 p-3 rounded-lg border border-slate-800">
+                                <div>
                                   <span className="text-slate-400 text-[10px] block font-semibold">CÓDIGO DA PEÇA</span>
-                                  <strong className="text-slate-200 font-mono">{un.codigoProduto || '—'}</strong>
+                                  <strong className="text-indigo-400 font-mono">{un.codigoProduto || '—'}</strong>
+                                </div>
+                                <div>
+                                  <span className="text-slate-400 text-[10px] block font-semibold">VALOR UNITÁRIO</span>
+                                  <strong className="text-slate-200">R$ {(un.valorUnitario || un.valorTotal || 0).toFixed(2).replace('.', ',')}</strong>
                                 </div>
                                 <div>
                                   <span className="text-slate-400 text-[10px] block font-semibold">VALOR TOTAL</span>
-                                  <strong className="text-emerald-400">R$ {un.valorTotal.toFixed(2).replace('.', ',')}</strong>
-                                </div>
-                                <div>
-                                  <span className="text-slate-400 text-[10px] block font-semibold">NF SUGERIDA</span>
-                                  <strong className="text-amber-300 font-mono">{un.numeroNota || '—'}</strong>
+                                  <strong className="text-emerald-400">R$ {(un.valorTotal || 0).toFixed(2).replace('.', ',')}</strong>
                                 </div>
                               </div>
 

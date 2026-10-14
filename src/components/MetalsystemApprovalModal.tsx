@@ -1,7 +1,21 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { 
-  X, Upload, FileText, CheckCircle2, AlertTriangle, ArrowRight, 
-  Sparkles, Check, Edit3, ShieldAlert, Layers, RefreshCw
+  X, 
+  Upload, 
+  FileText, 
+  CheckCircle2, 
+  AlertTriangle, 
+  ArrowRight, 
+  Sparkles, 
+  RefreshCw, 
+  Check, 
+  AlertCircle,
+  Edit3,
+  Info,
+  ShieldCheck,
+  Building2,
+  Mail,
+  Trash2
 } from 'lucide-react';
 import { StockItem } from '../types';
 import { 
@@ -33,13 +47,77 @@ export function MetalsystemApprovalModal({
   const [matchedResults, setMatchedResults] = useState<ApprovalMatchResult[]>([]);
   const [unmatchedItems, setUnmatchedItems] = useState<ParsedApprovalItem[]>([]);
   const [selectedMatchIndices, setSelectedMatchIndices] = useState<Set<number>>(new Set());
-  const [unmatchedSelections, setUnmatchedSelections] = useState<Record<number, string>>({});
-  const [reviewTab, setReviewTab] = useState<'matched' | 'unmatched'>('matched');
-  
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleDownloadUnmatchedCsv = () => {
+    if (unmatchedItems.length === 0) return;
+    const headers = ['Autorizacao', 'Numero Nota', 'Descricao Produto', 'Quantidade', 'Valor Total', 'Arquivo Origem'];
+    const rows = unmatchedItems.map(item => [
+      item.autorizacao || '6039',
+      item.numeroNota || '',
+      `"${(item.descricaoProduto || '').replace(/"/g, '""')}"`,
+      item.quantidade || 1,
+      (item.valorTotal || 0).toFixed(2),
+      `"${(item.fileName || '').replace(/"/g, '""')}"`
+    ]);
+    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(';'), ...rows.map(r => r.join(';'))].join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', `aprovacoes_pendentes_metalsystem_${Date.now()}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleSendUnmatchedEmail = () => {
+    if (unmatchedItems.length === 0) return;
+    const subject = encodeURIComponent('Relatório de Aprovações Pendentes Sem Match - Metalsystem');
+    let bodyLines = 'Relatório de Aprovações Pendentes (Metalsystem - Sem Match Automático):\n\n';
+    unmatchedItems.forEach((item, idx) => {
+      bodyLines += `${idx + 1}. AD: ${item.autorizacao || '6039'} | NF: ${item.numeroNota || '—'} | Produto: ${item.descricaoProduto} | Valor: R$ ${(item.valorTotal || 0).toFixed(2)} | Arquivo: ${item.fileName || 'N/A'}\n`;
+    });
+    const body = encodeURIComponent(bodyLines);
+    window.location.href = `mailto:appestoque@mecanizou.com?subject=${subject}&body=${body}`;
+  };
+
+  const handleManualLinkStockItem = (unmatchedIdx: number, stockIdentifier: string) => {
+    const itemIndex = parseInt(stockIdentifier, 10);
+    const stockItem = (!isNaN(itemIndex) && stockItems[itemIndex]) 
+      ? stockItems[itemIndex] 
+      : stockItems.find(s => s.idStock === stockIdentifier);
+    if (!stockItem) return;
+
+    const un = unmatchedItems[unmatchedIdx];
+    const newMatch: ApprovalMatchResult = {
+      stockItem,
+      parsedItem: un,
+      confidenceScore: 100,
+      matchReasons: ['Vinculado manualmente pelo operador (Metalsystem)'],
+      statusSource: 'outro',
+      proposedStatus: 'Emitir NF',
+      proposedObsNotaFiscal: `Nro Autorização: ${un.autorizacao || '6039'} - NF ${un.numeroNota || ''}`,
+      proposedObservacoesGerais: stockItem.observacoesGerais || '',
+      proposedMotivo: un.numeroNota || '',
+      proposedNfOrigem: un.numeroNota || '',
+      approved: true
+    };
+
+    setMatchedResults(prev => [...prev, newMatch]);
+    setSelectedMatchIndices(prev => {
+      const next = new Set(prev);
+      next.add(matchedResults.length);
+      return next;
+    });
+    setUnmatchedItems(prev => prev.filter((_, idx) => idx !== unmatchedIdx));
+  };
+
+  const handleRemoveUnmatchedItem = (unmatchedIdx: number) => {
+    setUnmatchedItems(prev => prev.filter((_, idx) => idx !== unmatchedIdx));
+  };
 
   const handleReset = () => {
     setStep('upload');
@@ -49,8 +127,6 @@ export function MetalsystemApprovalModal({
     setMatchedResults([]);
     setUnmatchedItems([]);
     setSelectedMatchIndices(new Set());
-    setUnmatchedSelections({});
-    setReviewTab('matched');
     setEditingIndex(null);
     setIsSaving(false);
   };
@@ -86,7 +162,6 @@ export function MetalsystemApprovalModal({
       setSelectedMatchIndices(initialSelected);
 
       setUploadedFileNames(fileNames);
-      setReviewTab(matched.length === 0 && unmatched.length > 0 ? 'unmatched' : 'matched');
       setStep('review');
       setIsProcessing(false);
     } catch (err: any) {
@@ -188,7 +263,6 @@ export function MetalsystemApprovalModal({
     try {
       const updatedStockItems = [...stockItems];
       const todayShort = new Date().toLocaleDateString('pt-BR');
-      const nowIso = new Date().toISOString();
 
       matchedResults.forEach((match, idx) => {
         if (!selectedMatchIndices.has(idx)) return;
@@ -213,7 +287,7 @@ export function MetalsystemApprovalModal({
           existingHistory.unshift({
             data: todayShort,
             acao: 'Aprovação Metalsystem Importada',
-            detalhe: `Status alterado para "${novoStatus}". Obs NF: "${match.proposedObsNotaFiscal}" (Aut ${match.parsedItem.autorizacao})`
+            detalhe: `Status alterado para "${novoStatus}". Obs NF: "${match.proposedObsNotaFiscal}" (Aut ${match.parsedItem.autorizacao || '6039'})`
           });
           item.historicoAlteracoes = existingHistory;
         }
@@ -257,21 +331,19 @@ export function MetalsystemApprovalModal({
           </button>
         </div>
 
+        {/* Error Alert */}
+        {errorMessage && (
+          <div className="mx-6 mt-4 p-3.5 bg-red-50 dark:bg-red-950/60 border border-red-200 dark:border-red-800/80 rounded-xl flex items-center space-x-2 text-xs text-red-700 dark:text-red-300">
+            <AlertCircle className="w-4 h-4 shrink-0 text-red-500" />
+            <span className="flex-1">{errorMessage}</span>
+            <button onClick={() => setErrorMessage(null)} className="text-red-500 hover:text-red-700">
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
+
         {/* Content Body */}
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
-          {errorMessage && (
-            <div className="flex items-start space-x-3 p-4 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs">
-              <ShieldAlert className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
-              <div className="flex-1">
-                <strong className="font-bold block mb-0.5">Atenção</strong>
-                {errorMessage}
-              </div>
-              <button onClick={() => setErrorMessage(null)} className="text-rose-400 hover:text-rose-200">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-          )}
-
           {step === 'upload' && (
             <div className="space-y-6">
               <div
@@ -334,7 +406,7 @@ export function MetalsystemApprovalModal({
               {/* Rules & Info */}
               <div className="p-4 rounded-xl bg-slate-950/40 border border-slate-800 text-xs space-y-2 text-slate-300">
                 <h4 className="font-bold text-white flex items-center space-x-2">
-                  <Layers className="w-4 h-4 text-orange-400" />
+                  <Building2 className="w-4 h-4 text-orange-400" />
                   <span>Regras de Cruzamento (Metalsystem):</span>
                 </h4>
                 <ul className="list-disc list-inside space-y-1 text-slate-400 text-[11px]">
@@ -349,35 +421,64 @@ export function MetalsystemApprovalModal({
 
           {step === 'review' && (
             <div className="space-y-6">
-              {/* Review Tabs & Stats */}
-              <div className="flex flex-wrap items-center justify-between gap-4 p-4 bg-slate-950/60 border border-slate-800 rounded-xl">
-                <div className="flex items-center space-x-3">
-                  <div className="flex items-center space-x-2">
-                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                    <span className="text-xs font-bold text-white">
-                      {matchedResults.length} Itens Cruzados com Sucesso
+              {/* Top Metrics Summary */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="p-3.5 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 rounded-xl flex items-center space-x-3">
+                  <div className="p-2 bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 rounded-lg">
+                    <CheckCircle2 className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <span className="text-xl font-extrabold text-emerald-900 dark:text-emerald-200">
+                      {matchedResults.length}
+                    </span>
+                    <span className="text-xs font-medium text-emerald-700 dark:text-emerald-400 block">
+                      Itens Cruzados com Sucesso
                     </span>
                   </div>
-                  {unmatchedItems.length > 0 && (
-                    <span className="text-xs font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30 px-2.5 py-0.5 rounded-full">
-                      {unmatchedItems.length} Sem Match Automático
-                    </span>
-                  )}
                 </div>
 
-                <div className="flex items-center space-x-3">
-                  <button
-                    type="button"
-                    onClick={handleToggleSelectAll}
-                    className="text-xs font-bold text-orange-400 hover:underline flex items-center space-x-1 cursor-pointer"
-                  >
-                    <Check className="w-3.5 h-3.5" />
-                    <span>{selectedMatchIndices.size === matchedResults.length ? 'Desmarcar Todos' : 'Marcar Todos'}</span>
-                  </button>
-                  <span className="text-xs text-slate-500">
-                    Arquivo: {uploadedFileNames.join(', ')}
-                  </span>
+                <div className="p-3.5 bg-orange-50 dark:bg-orange-950/40 border border-orange-200 dark:border-orange-800 rounded-xl flex items-center space-x-3">
+                  <div className="p-2 bg-orange-500/20 text-orange-600 dark:text-orange-400 rounded-lg">
+                    <FileText className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <span className="text-xl font-extrabold text-orange-900 dark:text-orange-200">
+                      {selectedMatchIndices.size}
+                    </span>
+                    <span className="text-xs font-medium text-orange-700 dark:text-orange-400 block">
+                      Selecionados para Gravação
+                    </span>
+                  </div>
                 </div>
+
+                <div className="p-3.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl flex items-center space-x-3">
+                  <div className="p-2 bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 rounded-lg">
+                    <ShieldCheck className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <span className="text-xs font-bold text-slate-800 dark:text-slate-200 block">
+                      Fornecedor Metalsystem
+                    </span>
+                    <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                      Folha de autorização única
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Review Bar */}
+              <div className="flex items-center justify-between p-3 bg-slate-950/60 border border-slate-800 rounded-xl">
+                <button
+                  type="button"
+                  onClick={handleToggleSelectAll}
+                  className="text-xs font-bold text-orange-400 hover:underline flex items-center space-x-1 cursor-pointer"
+                >
+                  <Check className="w-3.5 h-3.5" />
+                  <span>{selectedMatchIndices.size === matchedResults.length ? 'Desmarcar Todos' : 'Marcar Todos'}</span>
+                </button>
+                <span className="text-xs text-slate-400">
+                  Arquivo: {uploadedFileNames.join(', ')}
+                </span>
               </div>
 
               {/* Matched Items List with Side-by-Side Comparison Tables */}
@@ -554,6 +655,111 @@ export function MetalsystemApprovalModal({
                   );
                 })}
               </div>
+
+              {/* Unmatched Items Section */}
+              {unmatchedItems.length > 0 && (
+                <div className="space-y-3 pt-4 border-t border-slate-800">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div className="flex items-center space-x-2">
+                      <AlertTriangle className="w-5 h-5 text-amber-500" />
+                      <h3 className="text-sm font-bold text-white">
+                        Itens da Metalsystem Sem Match Automático ({unmatchedItems.length})
+                      </h3>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={handleDownloadUnmatchedCsv}
+                        className="inline-flex items-center space-x-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
+                      >
+                        <FileText className="w-3.5 h-3.5 text-sky-400" />
+                        <span>Baixar CSV Pendências</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleSendUnmatchedEmail}
+                        className="inline-flex items-center space-x-1.5 px-3 py-1.5 bg-sky-600 hover:bg-sky-500 text-white rounded-lg text-xs font-semibold transition-colors cursor-pointer shadow-sm"
+                      >
+                        <Mail className="w-3.5 h-3.5 text-white" />
+                        <span>Enviar por E-mail</span>
+                      </button>
+                    </div>
+                  </div>
+                  <p className="text-xs text-slate-400">
+                    Estes itens foram identificados no PDF da Metalsystem, mas não encontramos correspondência exata no estoque. Você pode vinculá-los manualmente ou excluí-los:
+                  </p>
+
+                  <div className="space-y-2">
+                    {unmatchedItems.map((un, unIdx) => (
+                      <div 
+                        key={`metalsystem-unmatched-${unIdx}`}
+                        className="p-4 bg-slate-950 border border-slate-800 rounded-xl space-y-2.5 shadow-sm"
+                      >
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-xs">
+                          <div>
+                            <span className="font-mono font-bold text-orange-400">AD: {un.autorizacao || '6039'}</span>
+                            <span className="mx-2 text-slate-600">•</span>
+                            <span className="text-amber-400 font-semibold">NF: {un.numeroNota || '—'}</span>
+                            <span className="mx-2 text-slate-600">•</span>
+                            <span className="text-emerald-400 font-bold">R$ {un.valorTotal.toFixed(2).replace('.', ',')}</span>
+                          </div>
+                          {un.fileName && (
+                            <span className="text-[11px] text-slate-500 font-medium truncate">{un.fileName}</span>
+                          )}
+                        </div>
+
+                        <div>
+                          <span className="text-slate-400 text-[10px] block font-semibold">DESCRIÇÃO DA PEÇA NO PDF</span>
+                          <p className="text-xs text-white font-bold mt-0.5">
+                            {un.descricaoProduto}
+                          </p>
+                        </div>
+
+                        {/* Manual Linking Selector & Exclude */}
+                        <div className="pt-2 flex flex-col sm:flex-row items-stretch sm:items-center gap-2 text-xs">
+                          <select
+                            onChange={e => {
+                              if (e.target.value) {
+                                handleManualLinkStockItem(unIdx, e.target.value);
+                              }
+                            }}
+                            defaultValue=""
+                            className="flex-1 bg-slate-900 border border-slate-700 text-slate-100 text-xs rounded-lg px-2.5 py-1.5 focus:ring-orange-500 focus:border-orange-500"
+                          >
+                            <option value="">Selecione um item do estoque Metalsystem (Em negociação)...</option>
+                            {stockItems
+                              .map((item, originalIdx) => ({ item, originalIdx }))
+                              .filter(({ item }) => {
+                                const forn = (item.fornecedor || '').toLowerCase();
+                                const filial = (item.novoFornecedorFilial || '').toLowerCase();
+                                const original = (item.fornecedorOriginal || '').toLowerCase();
+                                const statusDev = (item.statusDevolucao || '').toLowerCase();
+                                const isSupplier = forn.includes('metalsystem') || filial.includes('metalsystem') || original.includes('metalsystem') || forn.includes('metal');
+                                const isEmNegociacao = statusDev.includes('negociação') || statusDev.includes('negociacao');
+                                return isSupplier && isEmNegociacao;
+                              })
+                              .map(({ item, originalIdx }) => (
+                                <option key={`metalsystem-stock-opt-${item.idStock || 'item'}-${originalIdx}`} value={`${originalIdx}`}>
+                                  {item.idStock} - {item.descricao ? item.descricao.slice(0, 35) : ''}... - {item.valorTotal || item.valorUnitario || 'R$ 0,00'} ({item.statusDevolucao || 'Sem status'})
+                                </option>
+                              ))}
+                          </select>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveUnmatchedItem(unIdx)}
+                            className="px-3 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 font-bold rounded-lg text-xs transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-sm"
+                            title="Excluir esta aprovação pendente"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            <span>Excluir</span>
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

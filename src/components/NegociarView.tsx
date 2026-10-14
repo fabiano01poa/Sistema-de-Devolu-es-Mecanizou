@@ -38,6 +38,7 @@ import { GrupoRealApprovalModal } from './GrupoRealApprovalModal';
 import { CompelApprovalModal } from './CompelApprovalModal';
 import { DinparApprovalModal } from './DinparApprovalModal';
 import { MetalsystemApprovalModal } from './MetalsystemApprovalModal';
+import { JahuApprovalModal } from './JahuApprovalModal';
 import { isGrupoRealItem } from '../utils/approvalParser';
 import { SupplierConditionsModal, OFFICIAL_SUPPLIER_RULES } from './SupplierConditionsModal';
 import { 
@@ -179,6 +180,7 @@ export const NegociarView: React.FC<NegociarViewProps> = ({ items = [], onSelect
   const [isCompelModalOpen, setIsCompelModalOpen] = useState<boolean>(false);
   const [isDinparModalOpen, setIsDinparModalOpen] = useState<boolean>(false);
   const [isMetalsystemModalOpen, setIsMetalsystemModalOpen] = useState<boolean>(false);
+  const [isJahuModalOpen, setIsJahuModalOpen] = useState<boolean>(false);
   const [isAutomationsBarVisible, setIsAutomationsBarVisible] = useState<boolean>(() => {
     try {
       const saved = localStorage.getItem('automations_bar_visible');
@@ -240,6 +242,15 @@ export const NegociarView: React.FC<NegociarViewProps> = ({ items = [], onSelect
     }
     setBulkSuccessBanner(`Automação Metalsystem: ${updatedItems.length} item(ns) atualizado(s) com sucesso para "Emitir NF"!`);
     setIsMetalsystemModalOpen(false);
+    setTimeout(() => setBulkSuccessBanner(null), 6000);
+  };
+
+  const handleJahuApplyChanges = (updatedItems: StockItem[]) => {
+    if (onBatchUpdateStatus) {
+      onBatchUpdateStatus(updatedItems);
+    }
+    setBulkSuccessBanner(`Automação Jahu: ${updatedItems.length} item(ns) atualizado(s) com sucesso para "Emitir NF"!`);
+    setIsJahuModalOpen(false);
     setTimeout(() => setBulkSuccessBanner(null), 6000);
   };
 
@@ -1370,121 +1381,57 @@ export const NegociarView: React.FC<NegociarViewProps> = ({ items = [], onSelect
                   </div>
                 </button>
 
-                {/* Mercadocar Button (Regra dos 30 Dias) */}
+                {/* Metalsystem PDF Approval Import Button */}
                 <button
                   type="button"
-                  onClick={() => openSupplierModal('mercadocar')}
-                  className="group relative flex items-center space-x-3 px-3.5 py-2.5 rounded-xl bg-white dark:bg-slate-900/90 hover:bg-sky-50/50 dark:hover:bg-slate-800 border border-sky-200 dark:border-slate-700 text-slate-800 dark:text-white shadow-sm transition-all cursor-pointer"
+                  id="btn-metalsystem-automacao"
+                  onClick={() => setIsMetalsystemModalOpen(true)}
+                  className="group relative flex items-center space-x-3 px-3.5 py-2.5 rounded-xl bg-white dark:bg-slate-900/90 hover:bg-orange-50/50 dark:hover:bg-slate-800 border border-orange-300 dark:border-orange-700/70 text-slate-800 dark:text-white shadow-sm transition-all cursor-pointer"
                 >
-                  <div className="w-8 h-8 rounded-lg bg-sky-500/10 border border-sky-500/30 flex items-center justify-center text-sky-700 dark:text-sky-300 font-black text-xs group-hover:scale-105 transition-transform">
-                    MC
+                  <div className="w-8 h-8 rounded-lg bg-orange-500/15 border border-orange-500/30 flex items-center justify-center text-orange-600 dark:text-orange-400 font-black text-xs group-hover:scale-105 transition-transform">
+                    META
                   </div>
                   <div className="text-left">
                     <div className="flex items-center space-x-1.5">
                       <span className="text-xs font-bold text-slate-900 dark:text-white">
-                        Mercadocar
+                        Metalsystem
                       </span>
-                      <span className="text-[10px] bg-sky-100 dark:bg-sky-950/80 text-sky-800 dark:text-sky-300 border border-sky-200 dark:border-sky-800 px-1.5 py-0.2 rounded-full font-semibold">
-                        Regra 30D
+                      <span className="text-[10px] bg-orange-100 dark:bg-orange-950/80 text-orange-800 dark:text-orange-300 border border-orange-300 dark:border-orange-800 px-1.5 py-0.2 rounded-full font-semibold">
+                        Espelho PDF
                       </span>
-                      {supplierCounts.mercadocar > 0 && (
-                        <span className="text-[10px] bg-slate-100 dark:bg-slate-800 px-1.5 py-0.2 rounded-full font-mono text-slate-600 dark:text-slate-400">
-                          {supplierCounts.mercadocar}
-                        </span>
-                      )}
                     </div>
                     <p className="text-[10px] text-slate-500 dark:text-slate-400">
-                      Prazos e filiais de devolução
+                      Autorização Metalsystem x NF
                     </p>
                   </div>
                 </button>
 
-                {/* Cobra Automotiva Button (Regra 7D) */}
+                {/* Jahu PDF Approval Import Button */}
                 <button
                   type="button"
-                  onClick={() => openSupplierModal('cobra')}
-                  className="group relative flex items-center space-x-3 px-3.5 py-2.5 rounded-xl bg-white dark:bg-slate-900/90 hover:bg-sky-50/50 dark:hover:bg-slate-800 border border-sky-200 dark:border-slate-700 text-slate-800 dark:text-white shadow-sm transition-all cursor-pointer"
+                  id="btn-jahu-automacao"
+                  onClick={() => setIsJahuModalOpen(true)}
+                  className="group relative flex items-center space-x-3 px-3.5 py-2.5 rounded-xl bg-white dark:bg-slate-900/90 hover:bg-indigo-50/50 dark:hover:bg-slate-800 border border-indigo-300 dark:border-indigo-700/70 text-slate-800 dark:text-white shadow-sm transition-all cursor-pointer"
                 >
-                  <div className="w-8 h-8 rounded-lg bg-sky-500/10 border border-sky-500/30 flex items-center justify-center text-sky-700 dark:text-sky-300 font-black text-xs group-hover:scale-105 transition-transform">
-                    CO
+                  <div className="w-8 h-8 rounded-lg bg-indigo-500/15 border border-indigo-500/30 flex items-center justify-center text-indigo-600 dark:text-indigo-400 font-black text-xs group-hover:scale-105 transition-transform">
+                    JAHU
                   </div>
                   <div className="text-left">
                     <div className="flex items-center space-x-1.5">
                       <span className="text-xs font-bold text-slate-900 dark:text-white">
-                        Cobra
+                        Jahu
                       </span>
-                      <span className="text-[10px] bg-sky-100 dark:bg-sky-950/80 text-sky-800 dark:text-sky-300 border border-sky-200 dark:border-sky-800 px-1.5 py-0.2 rounded-full font-semibold">
-                        Regra 7D
+                      <span className="text-[10px] bg-indigo-100 dark:bg-indigo-950/80 text-indigo-800 dark:text-indigo-300 border border-indigo-300 dark:border-indigo-800 px-1.5 py-0.2 rounded-full font-semibold">
+                        Espelho PDF
                       </span>
-                      {supplierCounts.cobra > 0 && (
-                        <span className="text-[10px] bg-slate-100 dark:bg-slate-800 px-1.5 py-0.2 rounded-full font-mono text-slate-600 dark:text-slate-400">
-                          {supplierCounts.cobra}
-                        </span>
-                      )}
                     </div>
                     <p className="text-[10px] text-slate-500 dark:text-slate-400">
-                      Garantia técnica & comercial
+                      Código, valor & emissão x NF
                     </p>
                   </div>
                 </button>
 
-                {/* Josecar Button (Regra 15D) */}
-                <button
-                  type="button"
-                  onClick={() => openSupplierModal('josecar')}
-                  className="group relative flex items-center space-x-3 px-3.5 py-2.5 rounded-xl bg-white dark:bg-slate-900/90 hover:bg-sky-50/50 dark:hover:bg-slate-800 border border-sky-200 dark:border-slate-700 text-slate-800 dark:text-white shadow-sm transition-all cursor-pointer"
-                >
-                  <div className="w-8 h-8 rounded-lg bg-sky-500/10 border border-sky-500/30 flex items-center justify-center text-sky-700 dark:text-sky-300 font-black text-xs group-hover:scale-105 transition-transform">
-                    JC
-                  </div>
-                  <div className="text-left">
-                    <div className="flex items-center space-x-1.5">
-                      <span className="text-xs font-bold text-slate-900 dark:text-white">
-                        Josecar
-                      </span>
-                      <span className="text-[10px] bg-sky-100 dark:bg-sky-950/80 text-sky-800 dark:text-sky-300 border border-sky-200 dark:border-sky-800 px-1.5 py-0.2 rounded-full font-semibold">
-                        Regra 15D
-                      </span>
-                      {supplierCounts.josecar > 0 && (
-                        <span className="text-[10px] bg-slate-100 dark:bg-slate-800 px-1.5 py-0.2 rounded-full font-mono text-slate-600 dark:text-slate-400">
-                          {supplierCounts.josecar}
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-[10px] text-slate-500 dark:text-slate-400">
-                      Devolução balcão filial
-                    </p>
-                  </div>
-                </button>
 
-                {/* SK Mobility (GM) Button */}
-                <button
-                  type="button"
-                  onClick={() => openSupplierModal('sk_mobility')}
-                  className="group relative flex items-center space-x-3 px-3.5 py-2.5 rounded-xl bg-white dark:bg-slate-900/90 hover:bg-sky-50/50 dark:hover:bg-slate-800 border border-sky-200 dark:border-slate-700 text-slate-800 dark:text-white shadow-sm transition-all cursor-pointer"
-                >
-                  <div className="w-8 h-8 rounded-lg bg-sky-500/10 border border-sky-500/30 flex items-center justify-center text-sky-700 dark:text-sky-300 font-black text-xs group-hover:scale-105 transition-transform">
-                    GM
-                  </div>
-                  <div className="text-left">
-                    <div className="flex items-center space-x-1.5">
-                      <span className="text-xs font-bold text-slate-900 dark:text-white">
-                        SK Mobility
-                      </span>
-                      <span className="text-[10px] bg-sky-100 dark:bg-sky-950/80 text-sky-800 dark:text-sky-300 border border-sky-200 dark:border-sky-800 px-1.5 py-0.2 rounded-full font-semibold">
-                        Genuína GM
-                      </span>
-                      {supplierCounts.sk > 0 && (
-                        <span className="text-[10px] bg-slate-100 dark:bg-slate-800 px-1.5 py-0.2 rounded-full font-mono text-slate-600 dark:text-slate-400">
-                          {supplierCounts.sk}
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-[10px] text-slate-500 dark:text-slate-400">
-                      Linha GM Concessionária
-                    </p>
-                  </div>
-                </button>
               </div>
             </div>
           )}
@@ -2644,6 +2591,22 @@ export const NegociarView: React.FC<NegociarViewProps> = ({ items = [], onSelect
         onClose={() => setIsDinparModalOpen(false)}
         stockItems={items}
         onApplyChanges={handleDinparApplyChanges}
+      />
+
+      {/* Metalsystem PDF Approval Import & Automation Modal */}
+      <MetalsystemApprovalModal
+        isOpen={isMetalsystemModalOpen}
+        onClose={() => setIsMetalsystemModalOpen(false)}
+        stockItems={items}
+        onApplyChanges={handleMetalsystemApplyChanges}
+      />
+
+      {/* Jahu PDF Approval Import & Automation Modal */}
+      <JahuApprovalModal
+        isOpen={isJahuModalOpen}
+        onClose={() => setIsJahuModalOpen(false)}
+        stockItems={items}
+        onApplyChanges={handleJahuApplyChanges}
       />
 
       {/* Supplier Conditions & Policies Modal */}

@@ -1223,7 +1223,7 @@ async function extractTextFromUploadedFile(f: { name?: string; base64: string; t
                   }
                 },
                 {
-                  text: "Você é um leitor especializado em espelhos de devolução e autorizações de devolução de autopeças (G&B / Citel, Grupo Real / Real Moto Peças / RMP).\nTranscreva fielmente todo o texto do documento preservando: Número da Autorização de Devolução / Nrº Autorização (ex: 00082921-AD, 004737), Destinatário/Fornecedor (REAL MOTO PECAS LTDA, G&B AUTOPEÇAS ALTERNATIVAS), Códigos das peças (ex: TC9093, TC-9093, 74561), Descrição dos produtos (ex: TAMPA RESERVATORIO EXPANSAO), Quantidade, Valor Unitário, Valor Total e os Dados Adicionais com a NF referenciada (ex: Devolução ref. NF(s): 0147297, ou Chave de Acesso de 44 dígitos)."
+                  text: "Você é um leitor especializado em espelhos de devolução e autorizações de devolução de autopeças (Jahu, Metalsystem, Compel, Dinpar, G&B / Citel, Grupo Real / Real Moto Peças / RMP).\nTranscreva fielmente todo o texto do documento preservando: Número da Autorização de Devolução / Código Autorização (ex: 57189, 00082921-AD, 004737), Destinatário/Fornecedor, Códigos das peças, Descrição dos produtos (ex: MANGUEIRA DO RADIADOR INF, TAMPA RESERVATORIO EXPANSAO), Quantidade, Valor Unitário, Valor Total, Data de Emissão, Número da Nota Fiscal (NF Origem) e os Dados Adicionais."
                 }
               ]
             }

@@ -755,9 +755,12 @@ export const GrupoRealApprovalModal: React.FC<GrupoRealApprovalModalProps> = ({
                         )}
                       </div>
 
-                      <p className="text-xs text-slate-900 dark:text-slate-100 font-semibold">
-                        {un.descricaoProduto}
-                      </p>
+                      <div>
+                        <span className="text-slate-500 dark:text-slate-400 text-[10px] block font-semibold">DESCRIÇÃO DA PEÇA NO PDF</span>
+                        <p className="text-xs text-slate-900 dark:text-slate-100 font-bold mt-0.5">
+                          {un.descricaoProduto}
+                        </p>
+                      </div>
 
                       {/* Manual Linking Selector and Delete Button */}
                       <div className="pt-2 flex flex-col sm:flex-row items-stretch sm:items-center gap-2 text-xs">
@@ -770,13 +773,17 @@ export const GrupoRealApprovalModal: React.FC<GrupoRealApprovalModalProps> = ({
                           defaultValue=""
                           className="flex-1 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 text-xs rounded-lg px-2.5 py-1.5 focus:ring-amber-500 focus:border-amber-500"
                         >
-                          <option value="">Selecione um item do estoque (Grupo Real ou Mecanizou)...</option>
+                          <option value="">Selecione um item do estoque (Grupo Real ou Mecanizou - Em negociação)...</option>
                           {stockItems
                             .map((item, originalIdx) => ({ item, originalIdx }))
                             .filter(({ item }) => {
                               const forn = (item.fornecedor || '').toLowerCase();
                               const filial = (item.novoFornecedorFilial || '').toLowerCase();
-                              return forn.includes('real') || filial.includes('real') || forn.includes('mecanizou') || filial.includes('mecanizou');
+                              const original = (item.fornecedorOriginal || '').toLowerCase();
+                              const statusDev = (item.statusDevolucao || '').toLowerCase();
+                              const isSupplier = forn.includes('real') || filial.includes('real') || original.includes('real') || forn.includes('mecanizou') || filial.includes('mecanizou');
+                              const isEmNegociacao = statusDev.includes('negociação') || statusDev.includes('negociacao');
+                              return isSupplier && isEmNegociacao;
                             })
                             .map(({ item, originalIdx }) => (
                               <option key={`real-stock-opt-${item.idStock || 'item'}-${originalIdx}`} value={`${originalIdx}`}>
