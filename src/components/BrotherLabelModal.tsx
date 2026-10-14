@@ -6,6 +6,7 @@ interface BrotherLabelModalProps {
   isOpen: boolean;
   onClose: () => void;
   selectedItems: StockItem[];
+  onPrinted?: () => void;
   theme?: 'dark' | 'light';
 }
 
@@ -33,6 +34,7 @@ export const BrotherLabelModal: React.FC<BrotherLabelModalProps> = ({
   isOpen,
   onClose,
   selectedItems,
+  onPrinted,
   theme = 'dark'
 }) => {
   const isLight = theme === 'light';
@@ -88,10 +90,16 @@ export const BrotherLabelModal: React.FC<BrotherLabelModalProps> = ({
       });
 
       const data = await res.json().catch(() => ({}));
+      const success = res.ok && !!data.success;
       setStatusResult({
-        success: res.ok && !!data.success,
-        message: data.message || (res.ok ? "CSV enviado para a pasta Brother." : "Erro ao enviar CSV para a pasta Brother.")
+        success,
+        message: data.message || (success ? "CSV enviado para a pasta Brother." : "Erro ao enviar CSV para a pasta Brother.")
       });
+      if (success) {
+        // Start the next batch from scratch: clear the form and the stock-list selection.
+        setRows([newRow()]);
+        onPrinted?.();
+      }
     } catch (err: any) {
       setStatusResult({
         success: false,

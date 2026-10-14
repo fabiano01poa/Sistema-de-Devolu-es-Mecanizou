@@ -1114,6 +1114,7 @@ export default function App() {
         isOpen={isBrotherModalOpen}
         onClose={() => setIsBrotherModalOpen(false)}
         selectedItems={selectedBrotherItems}
+        onPrinted={() => setSelectedBrotherIds(new Set())}
         theme={theme}
       />
     </div>
