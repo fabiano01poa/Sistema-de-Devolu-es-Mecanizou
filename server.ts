@@ -1,6 +1,7 @@
 import express from "express";
 import path from "path";
 import fs from "fs";
+import crypto from "crypto";
 import { createServer as createViteServer } from "vite";
 import Papa from "papaparse";
 import { createRequire } from "module";
@@ -1101,65 +1102,185 @@ app.post("/api/test-webhook", async (req, res) => {
   }
 });
 
-// Endpoint to export Brother labels CSV to Google Drive via Apps Script webhook
+// ---------------------------------------------------------------------------
+// Brother label printing: form rows -> CSV in memory -> Google Drive file.
+// A local watcher (Google Drive for Desktop + script on the printer PC) only
+// reacts to a NEW file appearing, so we always trash the old file with the same
+// name and create a brand-new one. Never update the content of an existing file.
+// ---------------------------------------------------------------------------
+
+// Same columns/order as the CSVs the printer-side watcher already consumes.
+const BROTHER_CSV_HEADER = ["ID", "CODIGO", "DESCRICAO ITEM", "Qtd.", "MARCA", "FORNECEDOR", "Qtd. IMPRESSA"];
+// watcher.js only prints files with one of these exact names (normal / avulsa).
+const BROTHER_DEFAULT_FILENAME = "impressao-etiquetas-qrcode - etiquetas-avulsa-brother.csv";
+// Gap between trashing the old file and creating the new one, so Drive for Desktop
+// sees a delete followed by a new file (chokidar folds a fast unlink+add into "change").
+const BROTHER_TRASH_TO_CREATE_DELAY_MS = 2000;
+
+interface BrotherLabelRow {
+  id?: string;
+  codigo?: string;
+  marca?: string;
+  descricao?: string;
+  qtd?: string | number;
+  fornecedor?: string;
+  qtdImpressa?: string;
+}
+
+function csvField(value: unknown): string {
+  const s = value === undefined || value === null ? "" : String(value);
+  return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+function buildBrotherCsv(rows: BrotherLabelRow[]): string {
+  const lines = [BROTHER_CSV_HEADER.join(",")];
+  for (const r of rows) {
+    const qtdNum = parseInt(String(r.qtd ?? "").trim(), 10);
+    const qtd = Number.isFinite(qtdNum) && qtdNum > 0 ? qtdNum : 1;
+    lines.push([
+      csvField((r.id ?? "").toString().trim()),
+      csvField((r.codigo ?? "").toString().trim()),
+      csvField((r.descricao ?? "").toString().trim()),
+      String(qtd),
+      csvField((r.marca ?? "").toString().trim()),
+      csvField((r.fornecedor ?? "").toString().trim()),
+      csvField((r.qtdImpressa ?? "").toString().trim())
+    ].join(","));
+  }
+  // CRLF everywhere, including a trailing CRLF after the last data row
+  return lines.join("\r\n") + "\r\n";
+}
+
+function base64url(input: string | Buffer): string {
+  return Buffer.from(input).toString("base64").replace(/=+$/, "").replace(/\+/g, "-").replace(/\//g, "_");
+}
+
+async function getDriveAccessToken(): Promise<string> {
+  const clientEmail = (process.env.GOOGLE_CLIENT_EMAIL || "").trim();
+  const privateKey = (process.env.GOOGLE_PRIVATE_KEY || "").replace(/\\n/g, "\n").trim();
+  if (!clientEmail || !privateKey) {
+    throw new Error("Credenciais da Service Account não configuradas (GOOGLE_CLIENT_EMAIL / GOOGLE_PRIVATE_KEY).");
+  }
+
+  const now = Math.floor(Date.now() / 1000);
+  const header = base64url(JSON.stringify({ alg: "RS256", typ: "JWT" }));
+  const claim = base64url(JSON.stringify({
+    iss: clientEmail,
+    scope: "https://www.googleapis.com/auth/drive",
+    aud: "https://oauth2.googleapis.com/token",
+    iat: now,
+    exp: now + 3600
+  }));
+  const signature = base64url(crypto.createSign("RSA-SHA256").update(`${header}.${claim}`).sign(privateKey));
+
+  const resp = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+      assertion: `${header}.${claim}.${signature}`
+    })
+  });
+  const data: any = await resp.json().catch(() => ({}));
+  if (!resp.ok || !data.access_token) {
+    throw new Error(`Falha ao autenticar a Service Account: ${data.error_description || data.error || resp.status}`);
+  }
+  return data.access_token;
+}
+
+async function driveRequest(token: string, url: string, init: RequestInit = {}): Promise<any> {
+  const resp = await fetch(url, {
+    ...init,
+    headers: { Authorization: `Bearer ${token}`, ...(init.headers || {}) }
+  });
+  const text = await resp.text();
+  let data: any = null;
+  try { data = JSON.parse(text); } catch (_) {}
+  if (!resp.ok) {
+    throw new Error(`Google Drive ${resp.status}: ${data?.error?.message || text.slice(0, 200)}`);
+  }
+  return data;
+}
+
+// Trash every file with the fixed name in the folder, then create a new one from scratch.
+async function replaceDriveFileAsNew(folderId: string, fileName: string, content: string) {
+  const token = await getDriveAccessToken();
+  const DRIVE = "https://www.googleapis.com/drive/v3/files";
+  const UPLOAD = "https://www.googleapis.com/upload/drive/v3/files";
+
+  const escapedName = fileName.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+  const q = `name = '${escapedName}' and '${folderId}' in parents and trashed = false`;
+  const listParams = new URLSearchParams({
+    q,
+    fields: "files(id,name)",
+    supportsAllDrives: "true",
+    includeItemsFromAllDrives: "true",
+    pageSize: "100"
+  });
+  const existing = await driveRequest(token, `${DRIVE}?${listParams}`);
+  const toTrash: { id: string }[] = existing?.files || [];
+
+  for (const f of toTrash) {
+    await driveRequest(token, `${DRIVE}/${f.id}?supportsAllDrives=true`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ trashed: true })
+    });
+  }
+
+  if (toTrash.length > 0) {
+    await new Promise(resolve => setTimeout(resolve, BROTHER_TRASH_TO_CREATE_DELAY_MS));
+  }
+
+  const boundary = `brother-${Date.now()}`;
+  const body =
+    `--${boundary}\r\n` +
+    `Content-Type: application/json; charset=UTF-8\r\n\r\n` +
+    JSON.stringify({ name: fileName, parents: [folderId], mimeType: "text/csv" }) + `\r\n` +
+    `--${boundary}\r\n` +
+    `Content-Type: text/csv; charset=UTF-8\r\n\r\n` +
+    content + `\r\n` +
+    `--${boundary}--`;
+
+  const created = await driveRequest(token, `${UPLOAD}?uploadType=multipart&supportsAllDrives=true&fields=id,name`, {
+    method: "POST",
+    headers: { "Content-Type": `multipart/related; boundary=${boundary}` },
+    body
+  });
+
+  return { fileId: created?.id as string, trashedCount: toTrash.length };
+}
+
 app.post("/api/export-brother", async (req, res) => {
-  const { webhookUrl, items } = req.body;
-  const SYNC_CONFIG_PATH = path.join(process.cwd(), "sync_config.json");
-  let storedUrl = "";
-  try {
-    if (fs.existsSync(SYNC_CONFIG_PATH)) {
-      const cfg = JSON.parse(fs.readFileSync(SYNC_CONFIG_PATH, "utf-8"));
-      storedUrl = cfg.webhookUrl || "";
-    }
-  } catch (_) {}
-
-  const targetUrl = (webhookUrl || storedUrl || process.env.GOOGLE_SHEETS_WEBHOOK_URL || "").trim();
-
-  if (!targetUrl || !targetUrl.startsWith("http")) {
-    return res.status(400).json({
-      success: false,
-      message: "URL do Webhook do Google Apps Script não configurada. Configure no botão 'Sincronização Google'."
-    });
-  }
-
-  if (!items || !Array.isArray(items) || items.length === 0) {
-    return res.status(400).json({
-      success: false,
-      message: "Nenhum item selecionado para exportação."
-    });
-  }
-
-  try {
-    const result = await postToGoogleAppsScript(targetUrl, {
-      action: "exportarBrother",
-      items: items
-    });
-
-    const respText = result.text;
-    let respJson: any = null;
-    try {
-      respJson = JSON.parse(respText);
-    } catch (_) {}
-
-    if (result.status >= 200 && result.status < 400 && (!respJson || !respJson.error)) {
-      return res.json({
-        success: true,
-        message: respJson?.message || `CSV gerado com sucesso (${items.length} itens) e enviado para a pasta Brother no Google Drive!`,
-        details: respJson || respText.slice(0, 300)
-      });
-    } else {
-      const errMsg = respJson?.error || respJson?.message || `Status HTTP ${result.status}`;
-      return res.status(400).json({
-        success: false,
-        message: `Falha ao exportar para a pasta Brother: ${errMsg}`,
-        details: respText.slice(0, 300)
-      });
-    }
-  } catch (err: any) {
+  const folderId = (process.env.BROTHER_DRIVE_FOLDER_ID || "").trim();
+  const fileName = (process.env.BROTHER_CSV_FILENAME || BROTHER_DEFAULT_FILENAME).trim();
+  if (!folderId) {
     return res.status(500).json({
       success: false,
-      message: `Erro ao conectar com o Google Apps Script: ${err.message}`
+      message: "Impressão Brother não configurada no servidor (BROTHER_DRIVE_FOLDER_ID)."
     });
+  }
+
+  const rawRows: BrotherLabelRow[] = Array.isArray(req.body?.rows) ? req.body.rows : [];
+  const rows = rawRows.filter(r =>
+    [r?.codigo, r?.marca, r?.descricao].some(v => String(v ?? "").trim() !== "")
+  );
+  if (rows.length === 0) {
+    return res.status(400).json({ success: false, message: "Nenhuma linha preenchida para impressão." });
+  }
+
+  try {
+    const csv = buildBrotherCsv(rows);
+    const { fileId, trashedCount } = await replaceDriveFileAsNew(folderId, fileName, csv);
+    return res.json({
+      success: true,
+      message: `CSV com ${rows.length} ${rows.length === 1 ? "linha" : "linhas"} enviado para a pasta Brother no Google Drive.`,
+      fileId,
+      trashedCount
+    });
+  } catch (err: any) {
+    console.error("[export-brother]", err);
+    return res.status(500).json({ success: false, message: `Falha ao enviar CSV para o Google Drive: ${err.message}` });
   }
 });
 
