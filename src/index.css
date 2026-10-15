@@ -1,5 +1,8 @@
 @import "tailwindcss";
 
+/* dark: variants follow the in-app theme toggle (html.dark), not the OS setting */
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
   color-scheme: dark;
 }
