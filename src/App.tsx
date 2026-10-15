@@ -8,6 +8,7 @@ import { ItemList } from './components/ItemList';
 import { SheetModal } from './components/SheetModal';
 import { GoogleSyncModal } from './components/GoogleSyncModal';
 import { BrotherLabelModal } from './components/BrotherLabelModal';
+import { SupplierLabelModal } from './components/SupplierLabelModal';
 import { DocumentationModal } from './components/DocumentationModal';
 import { Dashboard } from './components/Dashboard';
 import { NegociarView } from './components/NegociarView';
@@ -18,7 +19,7 @@ import { isAllowedWarrantyStatus, isWarrantyItem, isDevolucaoItem, isItemUrgent,
 import { getItemPrimaryTimestamp } from './utils/dateUtils';
 import { FALLBACK_SAMPLE_DATA } from './utils/fallbackData';
 import { fetchSheetDirectlyFromClient } from './utils/clientSheetFetcher';
-import { AlertTriangle, Sparkles, RefreshCw, Layers, RotateCcw, Printer } from 'lucide-react';
+import { AlertTriangle, Sparkles, RefreshCw, Layers, RotateCcw, Printer, Truck } from 'lucide-react';
 
 const DEFAULT_SHEET_URL = "https://docs.google.com/spreadsheets/d/1daGWs2SPXQsN9YLJBggtyX0Wdqpv2kgBcB4mOUrhe7M/edit?gid=1870385864#gid=1870385864";
 
@@ -42,6 +43,7 @@ export default function App() {
   const [isSyncModalOpen, setIsSyncModalOpen] = useState<boolean>(false);
   const [selectedBrotherIds, setSelectedBrotherIds] = useState<Set<string>>(new Set());
   const [isBrotherModalOpen, setIsBrotherModalOpen] = useState<boolean>(false);
+  const [isSupplierLabelModalOpen, setIsSupplierLabelModalOpen] = useState<boolean>(false);
 
   const handleToggleBrotherSelect = (idStock: string) => {
     setSelectedBrotherIds(prev => {
@@ -1010,6 +1012,13 @@ export default function App() {
                       <Printer className="w-4 h-4" />
                       <span>Etiquetas {selectedBrotherIds.size > 0 ? `(${selectedBrotherIds.size})` : ''}</span>
                     </button>
+                    <button
+                      onClick={() => setIsSupplierLabelModalOpen(true)}
+                      className="px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs rounded-xl shadow-md flex items-center space-x-2 transition-all cursor-pointer"
+                    >
+                      <Truck className="w-4 h-4" />
+                      <span>Etiq Fornecedor</span>
+                    </button>
                   </div>
                 </div>
 
@@ -1115,6 +1124,14 @@ export default function App() {
         onClose={() => setIsBrotherModalOpen(false)}
         selectedItems={selectedBrotherItems}
         onPrinted={() => setSelectedBrotherIds(new Set())}
+        theme={theme}
+      />
+
+      {/* Supplier (Fornecedor / Filial / Volume) Label Modal */}
+      <SupplierLabelModal
+        isOpen={isSupplierLabelModalOpen}
+        onClose={() => setIsSupplierLabelModalOpen(false)}
+        items={items}
         theme={theme}
       />
     </div>

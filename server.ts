@@ -1113,6 +1113,8 @@ app.post("/api/test-webhook", async (req, res) => {
 const BROTHER_CSV_HEADER = ["ID", "CODIGO", "DESCRICAO ITEM", "Qtd.", "MARCA", "FORNECEDOR", "Qtd. IMPRESSA"];
 // watcher.js only prints files with one of these exact names (normal / avulsa).
 const BROTHER_DEFAULT_FILENAME = "impressao-etiquetas-qrcode - etiquetas-avulsa-brother.csv";
+// Supplier labels (Fornecedor / Filial / Volume) use the other name, so batches never trash each other.
+const BROTHER_FORNECEDOR_FILENAME = "impressao-etiquetas-qrcode - etiquetas-brother.csv";
 // Gap between trashing the old file and creating the new one, so Drive for Desktop
 // sees a delete followed by a new file (chokidar folds a fast unlink+add into "change").
 const BROTHER_TRASH_TO_CREATE_DELAY_MS = 2000;
@@ -1253,7 +1255,9 @@ async function replaceDriveFileAsNew(folderId: string, fileName: string, content
 
 app.post("/api/export-brother", async (req, res) => {
   const folderId = (process.env.BROTHER_DRIVE_FOLDER_ID || "").trim();
-  const fileName = (process.env.BROTHER_CSV_FILENAME || BROTHER_DEFAULT_FILENAME).trim();
+  const fileName = req.body?.mode === "fornecedor"
+    ? BROTHER_FORNECEDOR_FILENAME
+    : (process.env.BROTHER_CSV_FILENAME || BROTHER_DEFAULT_FILENAME).trim();
   if (!folderId) {
     return res.status(500).json({
       success: false,
