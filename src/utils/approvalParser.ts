@@ -1227,129 +1227,142 @@ Devolução ref. NF(s): 0147297 de 30/07/2026.
 Validade da autorização: 10 dias corridos.
 Favor emitir a nota fiscal de devolução rigorosamente com os mesmos valores e impostos informados acima.`;
 
+// Nº da autorização: "Nrº Autorização: 025232" (OCR) ou "025232	Nrº Autorização:" (pdf-parse, valor antes do rótulo)
+function findGrupoRealAuth(text: string): string {
+  const m = text.match(/Nr[ºo°]?\.?\s*Autoriza[çc][ãa]o\s*:?\s*(\d{4,8})(?![\d\/])/i) ||
+            text.match(/(\d{4,8})\s+Nr[ºo°]?\.?\s*Autoriza[çc][ãa]o/i);
+  return m ? m[1] : '';
+}
+
+// Nome do arquivo baixado do portal: "AD 25232 - MECANIZOU ... .pdf" -> "025232"
+function findGrupoRealAuthInFileName(fileName?: string): string {
+  const m = (fileName || '').match(/\bAD[\s_-]*(\d{3,8})\b/i);
+  return m ? m[1].padStart(6, '0') : '';
+}
+
+function findGrupoRealNf(text: string): string {
+  const m = text.match(/Devolu[çc][ãa]o\s+ref\.?\s*NF\(?s?\)?\s*:?\s*([\d.]{4,12})/i);
+  return m ? m[1].replace(/\./g, '') : '';
+}
+
+/**
+ * Extrai os produtos do bloco "Dados do Produto" da AD.
+ * Suporta a linha completa (OCR / SAMPLE_GRUPO_REAL_APPROVAL_OCR) e o layout do pdf-parse,
+ * em que a tabela sai por colunas: "18,00	SCT68 CABO VELA IGNICAO", "1", "Qde", "90,98", "Vl. Un.", "90,98 90,98"...
+ */
+function extractGrupoRealProducts(page: string) {
+  const lines = page.split(/\r?\n/).map(l => l.replace(/\s+/g, ' ').trim()).filter(Boolean);
+  const start = lines.findIndex(l => /^Dados do Produto$/i.test(l));
+  if (start < 0) return [];
+  let end = lines.findIndex((l, i) => i > start && /^(\*|C[áa]lculo do Imposto|Contato:|Validade|Favor emitir)/i.test(l));
+  if (end < 0) end = lines.length;
+
+  const products: Array<{ codigo: string; descricao: string; qtd: number; valorUnitario: number; valorTotal: number }> = [];
+  const otherLines: string[] = [];
+  const isCode = (c: string) => /[A-Z]/.test(c) && /\d/.test(c);
+
+  for (const line of lines.slice(start + 1, end)) {
+    if (/^Dados Adicionais$|Devolu[çc][ãa]o\s+ref|C[óo]d\.?\s*Prod|Descri[çc][ãa]o\s+Produto/i.test(line)) continue;
+
+    const full = line.match(/^([A-Z0-9][A-Z0-9.\-\/]{1,19}) (.+?) \d{8} \d{3} \d\.?\d{3} [A-Z]{2,3} (\d+(?:,\d+)?) ([\d.]+,\d{2,4}) ([\d.]+,\d{2})/);
+    if (full && isCode(full[1])) {
+      products.push({
+        codigo: full[1],
+        descricao: full[2].trim(),
+        qtd: parseCurrencyValue(full[3]) || 1,
+        valorUnitario: parseCurrencyValue(full[4]),
+        valorTotal: parseCurrencyValue(full[5])
+      });
+      continue;
+    }
+
+    // Alíquota de ICMS pode vir antes ou depois de "CÓDIGO DESCRIÇÃO"
+    const row = line.match(/^(?:\d{1,2},\d{2} )?([A-Z0-9][A-Z0-9.\-\/]{1,19}) ([A-Za-zÀ-ÿ].*?)(?: \d{1,2},\d{2})?$/);
+    if (row && isCode(row[1])) {
+      products.push({ codigo: row[1], descricao: row[2].trim(), qtd: 0, valorUnitario: 0, valorTotal: 0 });
+      continue;
+    }
+    otherLines.push(line);
+  }
+
+  // Layout por colunas: Qde e valores ficam em linhas soltas (Vl. Un., Vl. Total, BC ICMS, Vl. ICMS)
+  const pending = products.filter(p => p.qtd === 0);
+  if (pending.length > 0) {
+    const qtys = otherLines.filter(l => /^\d{1,4}$/.test(l)).map(Number);
+    const money = otherLines.flatMap(l => l.match(/\d{1,3}(?:\.\d{3})*,\d{2}\b/g) || []).map(v => parseCurrencyValue(v));
+    pending.forEach((p, i) => {
+      p.qtd = qtys.length === pending.length ? qtys[i] : 1;
+    });
+    // Valores só são confiáveis quando há um único produto; com vários, a ordem das colunas é ambígua.
+    if (pending.length === 1 && money.length >= 2) {
+      const p = pending[0];
+      p.valorUnitario = money[0];
+      p.valorTotal = money[1];
+    }
+  }
+
+  return products;
+}
+
+/**
+ * Lê espelhos "RMPR1660 - Autorização de Devolução (AD)" do Grupo Real (REAL MOTO PECAS).
+ * O servidor junta vários arquivos com "=== ARQUIVO: <nome> ===", então cada item guarda o próprio arquivo.
+ */
 export function parseGrupoRealApprovalText(fullText: any, fileName?: string): ParsedApprovalItem[] {
   const text = typeof fullText === 'string' ? fullText : String(fullText || '');
   if (!text.trim()) return [];
   const results: ParsedApprovalItem[] = [];
 
-  // Split multiple documents if combined
-  const chunks = text.split(/(?=RMPR1660|Autoriza[çc][ãa]o\s+de\s+Devolu[çc][ãa]o\s*\(AD\)|REAL\s+MOTO\s+PE[ÇC]AS)/i)
-    .filter(c => c.trim().length > 50);
+  const sections: Array<{ name?: string; body: string }> = [];
+  const parts = text.split(/^=== ARQUIVO: (.+?) ===[ \t]*$/m);
+  if (parts[0].trim()) sections.push({ name: parts.length > 1 ? undefined : fileName, body: parts[0] });
+  for (let i = 1; i < parts.length; i += 2) {
+    sections.push({ name: parts[i].trim(), body: parts[i + 1] || '' });
+  }
 
-  const chunksToProcess = chunks.length > 0 ? chunks : [text];
+  sections.forEach((section, sIdx) => {
+    const docAuth = findGrupoRealAuth(section.body) || findGrupoRealAuthInFileName(section.name);
+    const docNf = findGrupoRealNf(section.body);
 
-  chunksToProcess.forEach((chunk, docIndex) => {
-    // 1. Autorização (Nrº Autorização: 004737, highlighted in red)
-    let autorizacao = '';
-    const fileAuth = extractAuthFromFileName(fileName);
-    if (fileAuth) {
-      autorizacao = fileAuth;
-    } else {
-      const autMatch = chunk.match(/(?:Nr[ºo°]?\s*Autoriza[çc][ãa]o|Autoriza[çc][ãa]o\s*\(AD\)|N[ºo°]?\s*Autoriza[çc][ãa]o)[:\s#]*([0-9A-Za-z\-]+)/i) ||
-                       chunk.match(/\bAutoriza[çc][ãa]o[:\s#]*([0-9]{4,10})\b/i);
-      if (autMatch) {
-        autorizacao = autMatch[1].trim();
-      } else {
-        autorizacao = `004737`;
-      }
-    }
+    // Cada página/AD começa com o cabeçalho RMPR1660
+    const pages = section.body.split(/(?=RMPR1660)/i).filter(p => p.trim());
+    pages.forEach((page, pIdx) => {
+      const autorizacao = findGrupoRealAuth(page) || docAuth;
+      const numeroNota = findGrupoRealNf(page) || docNf;
 
-    // 2. Destinatário / Fornecedor
-    let destinatario = 'REAL MOTO PECAS LTDA';
-    const destMatch = chunk.match(/Destinat[áa]rio[:\s]+([^\r\n]+)/i);
-    if (destMatch) {
-      destinatario = destMatch[1].trim();
-    }
-
-    // 3. NF de Devolução (Devolução ref. NF(s): 0147297, highlighted in yellow)
-    let numeroNota = '';
-    const nfMatch = chunk.match(/(?:Devolu[çc][ãa]o\s+ref\.?\s*NF\(?s?\)?|ref\.?\s*NF\(?s?\)?|NF\(?s?\))[:\s#]*([0-9]{4,10})/i) ||
-                    chunk.match(/(?:Nota\s+Fiscal|Danfe|NF)[:\s#]*([0-9]{4,10})/i);
-    if (nfMatch) {
-      numeroNota = nfMatch[1].trim();
-    }
-
-    // 4. Products table extraction
-    const parsedProducts: Array<{
-      codigo?: string;
-      descricao: string;
-      qtd: number;
-      valorUnitario: number;
-      valorTotal: number;
-    }> = [];
-
-    // Parse product lines matching table format:
-    // Cód. Prod.   Descrição Produto               NCM       CST  CFOP   Un.  Qde  Vl. Un.  Vl. Total
-    // TC9093       TAMPA RESERVATORIO EXPANSAO     87089990  060  5.411  PC   1    23,66    23,66
-    const safeChunk = typeof chunk === 'string' ? chunk : String(chunk || '');
-    const lines = String(safeChunk || '').split('\n').map(l => l.trim()).filter(Boolean);
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-      if (/C[óo]d\.?\s*Prod|Descri[çc][ãa]o|CFOP|VALOR|UNIT[ÁA]RIO|NCM|Qde|Vl\./i.test(line)) continue;
-      if (/Devolu[çc][ãa]o\s+ref|Validade|Favor\s+emitir|Destinat[áa]rio|Remetente|CNPJ/i.test(line)) continue;
-
-      // Pattern: Code (alphanumeric like TC9093 or TC-9093) followed by Description and optionally numbers
-      const prodLineMatch = line.match(/^([A-Z0-9\-\.]{3,15})\s+([A-Za-zÀ-ÿ0-9\/\.\-\s]+?)(?:\s+\d{8})?(?:\s+\d{3})?(?:\s+5\.?\d{3})?(?:\s+PC|\s+UN|\s+JG|\s+KT)?(?:\s+(\d+[\.,]?\d*))?(?:\s+(\d+[\.,]\d{2,4}))?(?:\s+(\d+[\.,]\d{2}))?$/i);
-
-      if (prodLineMatch) {
-        const cod = prodLineMatch[1].trim();
-        const desc = prodLineMatch[2].trim();
-        const qtd = prodLineMatch[3] ? parseCurrencyValue(prodLineMatch[3]) : 1;
-        const vlUnit = prodLineMatch[4] ? parseCurrencyValue(prodLineMatch[4]) : 0;
-        const vlTot = prodLineMatch[5] ? parseCurrencyValue(prodLineMatch[5]) : vlUnit;
-
-        parsedProducts.push({
-          codigo: cod,
-          descricao: desc,
-          qtd: qtd || 1,
-          valorUnitario: vlUnit || vlTot,
-          valorTotal: vlTot || vlUnit
+      extractGrupoRealProducts(page).forEach((p, idx) => {
+        results.push({
+          id: `real-parsed-${sIdx + 1}-${pIdx + 1}-${idx + 1}-${Date.now()}`,
+          autorizacao,
+          destinatario: 'REAL MOTO PECAS LTDA',
+          codigoProduto: p.codigo,
+          descricaoProduto: p.descricao,
+          quantidade: p.qtd || 1,
+          valorUnitario: p.valorUnitario,
+          valorTotal: p.valorTotal,
+          numeroNota,
+          fileName: section.name,
+          pageNumber: pIdx + 1,
+          rawSnippet: page.slice(0, 300)
         });
-      }
-    }
-
-    // Fallback if structured table line regex didn't catch:
-    if (parsedProducts.length === 0) {
-      // Look for TC-9093 / TC9093 or similar code
-      const codeSearch = chunk.match(/\b([A-Z]{1,4}-?[0-9]{3,8}[A-Z0-9]?)\b/i);
-      const descSearch = chunk.match(/(?:TAMPA|RESERVATORIO|AMORTECEDOR|PASTILHA|DISCO|FILTRO|BOMBA|KIT|VALVULA)[^\r\n0-9]+/i);
-      const valueSearch = chunk.match(/(\d+[\.,]\d{2})/g);
-
-      let foundVal = 0;
-      if (valueSearch && valueSearch.length > 0) {
-        // usually the last or one of the values
-        foundVal = parseCurrencyValue(valueSearch[valueSearch.length - 1]);
-      }
-
-      parsedProducts.push({
-        codigo: codeSearch ? codeSearch[1] : 'TC9093',
-        descricao: descSearch ? descSearch[0].trim() : 'TAMPA RESERVATORIO EXPANSAO',
-        qtd: 1,
-        valorUnitario: foundVal,
-        valorTotal: foundVal
-      });
-    }
-
-    parsedProducts.forEach((p, pIdx) => {
-      const cleanNfStr = (s: string) => (s || '').replace(/\./g, '').trim();
-      results.push({
-        id: `real-parsed-${docIndex + 1}-${pIdx + 1}-${Date.now()}`,
-        autorizacao,
-        destinatario,
-        codigoProduto: p.codigo,
-        descricaoProduto: p.descricao,
-        quantidade: p.qtd || 1,
-        valorUnitario: p.valorUnitario,
-        valorTotal: p.valorTotal,
-        numeroNota: cleanNfStr(numeroNota),
-        fileName,
-        pageNumber: docIndex + 1,
-        rawSnippet: chunk.slice(0, 300)
       });
     });
   });
 
   return results;
+}
+
+/**
+ * Textos gravados na planilha para uma AD do Grupo Real (match automático ou vínculo manual).
+ */
+export function buildGrupoRealProposal(parsed: ParsedApprovalItem) {
+  const aut = parsed.autorizacao || '';
+  const nf = (parsed.numeroNota || '').replace(/\./g, '').trim();
+  return {
+    proposedObsNotaFiscal: [aut && `Nro Autorização: ${aut}`, nf && `NF ${nf}`].filter(Boolean).join(' - '),
+    proposedMotivo: nf ? `NF ${nf}` : '',
+    proposedNfOrigem: nf
+  };
 }
 
 /**
@@ -1542,14 +1555,8 @@ export function matchGrupoRealWithStock(
       // - Autorização e NF vão para Obs Nota Fiscal
       // - Observações gerais fica limpa (sem Aut/NF)
       // - NF Origem recebe apenas o número da nota
-      const autStr = parsed.autorizacao || '004737';
-      const cleanNf = (str: string) => (str || '').replace(/\./g, '').trim();
-      const nfStr = cleanNf(parsed.numeroNota || '0147297');
-
-      const proposedObsNotaFiscal = `Nro Autorização: ${autStr} - NF ${nfStr}`;
-      const proposedMotivo = `NF ${nfStr}`;
+      const { proposedObsNotaFiscal, proposedMotivo, proposedNfOrigem } = buildGrupoRealProposal(parsed);
       const proposedObservacoesGerais = best.candidate.observacoesGerais || '';
-      const proposedNfOrigem = nfStr;
 
       matched.push({
         parsedItem: parsed,
