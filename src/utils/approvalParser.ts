@@ -224,72 +224,6 @@ export function parseCurrencyValue(val?: string | number): number {
   return parseFloat(clean) || 0;
 }
 
-function extractGenericProductsFromChunk(chunk: string, defaultAuth: string, defaultNf: string): Array<{
-  codigo?: string;
-  descricao: string;
-  qtd: number;
-  valorUnitario: number;
-  valorTotal: number;
-  numeroNota?: string;
-}> {
-  const products: Array<{
-    codigo?: string;
-    descricao: string;
-    qtd: number;
-    valorUnitario: number;
-    valorTotal: number;
-    numeroNota?: string;
-  }> = [];
-
-  const lines = chunk.split('\n').map(l => l.trim()).filter(Boolean);
-  for (const line of lines) {
-    if (/CÓDIGO|PRODUTO|DESCRIÇÃO|NCM|CFOP|VALOR|UNITÁRIO|VLR|ALÍQ|DO ITEM|PÁGINA|TOTAL|Mecanizou|Espelho|Autorização|CNPJ|Endereço|Telefone|Inscrição|Cálculo|Transportador|Dados Adicionais/i.test(line)) {
-      continue;
-    }
-
-    const match = line.match(/^([A-Z0-9\-\.]{2,15})?\s*([A-Za-zÀ-ÿ0-9\/\.\-\s]{4,})\s+(\d+[\.,]\d{2})$/i) ||
-                  line.match(/^([A-Za-zÀ-ÿ0-9\/\.\-\s]{5,})\s+(\d+[\.,]\d{2})\s+(\d+[\.,]\d{2})$/i);
-
-    if (match) {
-      const maybeCode = match[2] ? match[1] : undefined;
-      const desc = (match[2] || match[1]).trim();
-      const val = parseCurrencyValue(match[3] || match[2]);
-
-      if (desc.length >= 3 && val > 0 && !desc.toUpperCase().includes('TOTAL')) {
-        products.push({
-          codigo: maybeCode,
-          descricao: desc,
-          qtd: 1,
-          valorUnitario: val,
-          valorTotal: val
-        });
-      }
-    }
-  }
-
-  if (products.length === 0) {
-    for (const line of lines) {
-      if (line.length > 8 && /[A-Za-z]{3,}/.test(line) && !/Mecanizou|Espelho|Autorização|CNPJ|Rua|São Paulo|Ltda|Data|Fone/i.test(line)) {
-        const valueMatches = line.match(/(\d+[\.,]\d{2})/g);
-        const val = valueMatches ? parseCurrencyValue(valueMatches[valueMatches.length - 1]) : 0;
-        const cleanDesc = line.replace(/[\d,\.\/]+$/, '').trim();
-        if (cleanDesc.length >= 4) {
-          products.push({
-            codigo: defaultAuth,
-            descricao: cleanDesc,
-            qtd: 1,
-            valorUnitario: val || 50.00,
-            valorTotal: val || 50.00
-          });
-          break;
-        }
-      }
-    }
-  }
-
-  return products;
-}
-
 /**
  * Main parser: takes extracted text from one or multiple PDF pages and returns structured items.
  */
@@ -1305,22 +1239,28 @@ function extractGrupoRealProducts(page: string) {
 }
 
 /**
- * Lê espelhos "RMPR1660 - Autorização de Devolução (AD)" do Grupo Real (REAL MOTO PECAS).
- * O servidor junta vários arquivos com "=== ARQUIVO: <nome> ===", então cada item guarda o próprio arquivo.
+ * Separa o texto devolvido por /api/parse-approval-pdf, que junta os arquivos com "=== ARQUIVO: <nome> ===".
+ * Sem marcador, o texto inteiro é tratado como um único arquivo.
  */
-export function parseGrupoRealApprovalText(fullText: any, fileName?: string): ParsedApprovalItem[] {
-  const text = typeof fullText === 'string' ? fullText : String(fullText || '');
-  if (!text.trim()) return [];
-  const results: ParsedApprovalItem[] = [];
-
+function splitUploadedFiles(text: string, fileName?: string): Array<{ name?: string; body: string }> {
   const sections: Array<{ name?: string; body: string }> = [];
   const parts = text.split(/^=== ARQUIVO: (.+?) ===[ \t]*$/m);
   if (parts[0].trim()) sections.push({ name: parts.length > 1 ? undefined : fileName, body: parts[0] });
   for (let i = 1; i < parts.length; i += 2) {
     sections.push({ name: parts[i].trim(), body: parts[i + 1] || '' });
   }
+  return sections;
+}
 
-  sections.forEach((section, sIdx) => {
+/**
+ * Lê espelhos "RMPR1660 - Autorização de Devolução (AD)" do Grupo Real (REAL MOTO PECAS).
+ */
+export function parseGrupoRealApprovalText(fullText: any, fileName?: string): ParsedApprovalItem[] {
+  const text = typeof fullText === 'string' ? fullText : String(fullText || '');
+  if (!text.trim()) return [];
+  const results: ParsedApprovalItem[] = [];
+
+  splitUploadedFiles(text, fileName).forEach((section, sIdx) => {
     const docAuth = findGrupoRealAuth(section.body) || findGrupoRealAuthInFileName(section.name);
     const docNf = findGrupoRealNf(section.body);
 
@@ -1353,9 +1293,9 @@ export function parseGrupoRealApprovalText(fullText: any, fileName?: string): Pa
 }
 
 /**
- * Textos gravados na planilha para uma AD do Grupo Real (match automático ou vínculo manual).
+ * Textos gravados na planilha para uma aprovação (match automático ou vínculo manual).
  */
-export function buildGrupoRealProposal(parsed: ParsedApprovalItem) {
+export function buildApprovalProposal(parsed: ParsedApprovalItem) {
   const aut = parsed.autorizacao || '';
   const nf = (parsed.numeroNota || '').replace(/\./g, '').trim();
   return {
@@ -1555,7 +1495,7 @@ export function matchGrupoRealWithStock(
       // - Autorização e NF vão para Obs Nota Fiscal
       // - Observações gerais fica limpa (sem Aut/NF)
       // - NF Origem recebe apenas o número da nota
-      const { proposedObsNotaFiscal, proposedMotivo, proposedNfOrigem } = buildGrupoRealProposal(parsed);
+      const { proposedObsNotaFiscal, proposedMotivo, proposedNfOrigem } = buildApprovalProposal(parsed);
       const proposedObservacoesGerais = best.candidate.observacoesGerais || '';
 
       matched.push({
@@ -1879,186 +1819,74 @@ export function parseJahuApprovalText(fullText: any, fileName?: string): ParsedA
   const text = typeof fullText === 'string' ? fullText : String(fullText || '');
   if (!text.trim()) return [];
   const results: ParsedApprovalItem[] = [];
+  const MONEY = /\d{1,3}(?:\.\d{3})*,\d{2}\b/g;
 
-  const fileChunks = text.split(/(?====\s*ARQUIVO:)/i).filter(c => c.trim().length > 10);
-  const chunksToProcess = fileChunks.length > 0 ? fileChunks : [text];
+  splitUploadedFiles(text, fileName).forEach((section, sIdx) => {
+    const lines = section.body.split(/\r?\n/).map(l => l.replace(/\s+/g, ' ').trim()).filter(Boolean);
+    const body = lines.join('\n');
+    const headerIdx = lines.findIndex(l => /\bC[ÓO]D(?:IGO)?\b\.?.*DESCRI[ÇC][ÃA]O/i.test(l));
 
-  chunksToProcess.forEach((chunk, docIndex) => {
-    let chunkFileName = fileName || '';
-    const fileHeaderMatch = chunk.match(/===\s*ARQUIVO:\s*([^\s=]+[^\n]*)\s*===/i);
-    if (fileHeaderMatch) {
-      chunkFileName = fileHeaderMatch[1].trim();
-    }
+    // "Código Autorização: 57866" na mesma linha (OCR) ou número sozinho numa linha antes da tabela (pdf-parse)
+    const sameLineAuth = body.match(/C[óo]digo\s+Autoriza[çc][ãa]o:[ \t]*([A-Z0-9][A-Z0-9\-]*\d[A-Z0-9\-]*)/i);
+    const autorizacao = sameLineAuth
+      ? sameLineAuth[1]
+      : (lines.slice(0, headerIdx < 0 ? lines.length : headerIdx).find(l => /^\d{4,8}$/.test(l)) || '');
 
-    let autorizacao = extractAuthFromFileName(chunkFileName) || '';
-    let numeroNota = '';
-    let dataEmissao = '';
+    const empresaMatch = body.match(/Empresa:\s*\d+\s*-\s*(JAHU[^\n]*?)\s*(?=AUTORIZA[ÇC][ÃA]O|$)/im);
+    const destinatario = empresaMatch ? empresaMatch[1].trim() : 'JAHU';
+    const headerNf = (body.match(/NF\.?\s*Origem:\s*(\d{4,10})/i) || [])[1] || '';
+    const headerDate = (body.match(/(?:DATA|Data\s+Emiss[ãa]o):\s*(\d{2}\/\d{2}\/\d{4})/i) || [])[1] || '';
 
-    const autMatch = chunk.match(/(?:C[óo]digo\s*Autoriza[çc][ãa]o|Autoriza[çc][ãa]o|AD|N[ºo]\.?\s*Aprova[çc][ãa]o)[:\s#]*([A-Z0-9\-]{3,15})/i);
-    if (autMatch && autMatch[1].toUpperCase() !== 'EMPRESA') {
-      autorizacao = autMatch[1].trim();
-    }
-    if (!autorizacao || autorizacao.toUpperCase() === 'EMPRESA') {
-      // Look for any standalone number or code after "Autorização" or in header
-      const headerAuthMatch = chunk.match(/(?:Autoriza[çc][ãa]o|Aprova[çc][ãa]o|Pedido)[:\s#]*([A-Z0-9\-]{4,15})/i);
-      if (headerAuthMatch && headerAuthMatch[1].toUpperCase() !== 'EMPRESA') {
-        autorizacao = headerAuthMatch[1].trim();
+    lines.forEach(line => {
+      let codigo = '', descricao = '', qtd = 0, valorUnitario = 0, valorTotal = 0;
+      let numeroNota = headerNf, dataEmissao = headerDate;
+
+      // Layout do sistema Jahu: [CFOP] COD DESCRIÇÃO NCM QTDE <valores...> NF.ORIGEM EMISSÃO [CFOP]
+      const row = line.match(/^(?:[1-7]\d{3} )?([A-Z0-9][A-Z0-9.\-\/]{2,14}) ([A-Za-zÀ-ÿ].*?) (\d{8}) (\d{1,4}) (.*)$/);
+      // Layout em tabela com "|" (SAMPLE_JAHU_APPROVAL_OCR): COD | DESCRIÇÃO | QTDE | UNIT | TOTAL
+      const piped = line.includes('|') ? line.split('|').map(p => p.trim()) : [];
+
+      if (row && /\d/.test(row[1])) {
+        codigo = row[1];
+        descricao = row[2].trim();
+        qtd = parseInt(row[4], 10) || 1;
+        const rest = row[5];
+        const nfDate = rest.match(/(\d{5,10}) (\d{2}\/\d{2}\/\d{4})/);
+        if (nfDate) {
+          numeroNota = nfDate[1];
+          dataEmissao = nfDate[2];
+        }
+        const money = (nfDate ? rest.slice(0, nfDate.index) : rest).match(MONEY)?.map(v => parseCurrencyValue(v)) || [];
+        valorUnitario = money[0] || 0;
+        // A ordem das colunas varia conforme a extração; o total é o valor que bate com qtde x unitário
+        const expectedTotal = Math.round(qtd * valorUnitario * 100) / 100;
+        valorTotal = money.slice(1).find(v => Math.abs(v - expectedTotal) <= 0.02) ?? expectedTotal;
+      } else if (piped.length >= 5 && /\d/.test(piped[0]) && /[A-Za-zÀ-ÿ]/.test(piped[1])) {
+        codigo = piped[0];
+        descricao = piped[1];
+        qtd = parseInt(piped[2], 10) || 1;
+        valorUnitario = parseCurrencyValue(piped[3]);
+        valorTotal = parseCurrencyValue(piped[4]) || Math.round(qtd * valorUnitario * 100) / 100;
       } else {
-        autorizacao = extractAuthFromFileName(chunkFileName) || `JAHU-${docIndex + 1}`;
+        return;
       }
-    }
 
-    const nfMatch = chunk.match(/(?:NF\.?\s*Origem|NF\s*Origem|Nota\s*Fiscal|NF)[:\s#]*([0-9]{4,10})/i);
-    if (nfMatch && nfMatch[1] !== autorizacao) {
-      numeroNota = nfMatch[1].trim();
-    }
-    if (!numeroNota) {
-      const allNums = chunk.match(/\b([0-9]{5,10})\b/g);
-      if (allNums) {
-        const found = allNums.find(n => n !== autorizacao && !n.startsWith('400')); // avoid NCM
-        if (found) numeroNota = found;
-      }
-    }
-    if (!numeroNota) {
-      numeroNota = autorizacao;
-    }
-
-    const dateMatch = chunk.match(/(?:DT\.?\s*EMISS[ÃA]O|DATA\s*DE\s*EMISS[ÃA]O|EMISS[ÃA]O|Data\s*da\s*Emiss[ãa]o|Data)[:\s#]*([0-9]{2}\/[0-9]{2}\/[0-9]{4})/i);
-    if (dateMatch) {
-      dataEmissao = dateMatch[1].trim();
-    }
-
-    const lines = chunk.split('\n').map(l => l.trim()).filter(Boolean);
-    let chunkItemsFound = 0;
-
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-      if (/C[óo]d|Descri[çc][ãa]o|Valor|Total|Jahu|Data|NF|ARQUIVO|Representante|Parceiro|Natureza|CFOP|Empresa|Filial|Borrachas|Espelho|CNPJ|Endere[çc]o|Telefone/i.test(line) && !/\d{5,}/.test(line) && !/\d+[\.,]\d{2}/.test(line)) continue;
-
-      const parts = line.split(/\s{2,}|\t+|\|\s*/).map(p => p.trim()).filter(Boolean);
-      if (parts.length >= 2) {
-        let possibleCode = '';
-        let descStartIdx = 1;
-
-        if (/^(5411|6404|1411|2411)$/.test(parts[0]) && parts.length >= 3) {
-          possibleCode = parts[1];
-          descStartIdx = 2;
-        } else if (/^[A-Z0-9\-\.]{2,15}$/.test(parts[0]) && !/EMPRESA|JAHU/i.test(parts[0])) {
-          possibleCode = parts[0];
-          descStartIdx = 1;
-        } else {
-          for (let p = 0; p < Math.min(parts.length, 3); p++) {
-            if (/^\d{4,8}$/.test(parts[p])) {
-              possibleCode = parts[p];
-              descStartIdx = p + 1;
-              break;
-            }
-          }
-        }
-
-        if (possibleCode && !/EMPRESA|JAHU|BORRACHAS/i.test(possibleCode)) {
-          let descParts: string[] = [];
-          let qtd = 1;
-          let valorUnit = 0;
-          let valorTot = 0;
-          let rowNf = numeroNota;
-          let rowDate = dataEmissao;
-
-          for (let p = descStartIdx; p < parts.length; p++) {
-            const token = parts[p];
-            if (/R?\$?\s*\d+[\.,]\d{2}/.test(token) || /^\d+[\.,]\d{2}$/.test(token)) {
-              const parsedVal = parseCurrencyValue(token);
-              if (valorUnit === 0) valorUnit = parsedVal;
-              else valorTot = parsedVal;
-            } else if (/^\d{1,3}$/.test(token) && parseInt(token, 10) < 50 && qtd === 1 && valorUnit === 0) {
-              qtd = parseInt(token, 10);
-            } else if (/^\d{5,10}$/.test(token)) {
-              rowNf = token;
-            } else if (/^\d{2}\/\d{2}\/\d{4}$/.test(token)) {
-              rowDate = token;
-            } else if (/^\d{8}$/.test(token)) {
-              continue;
-            } else {
-              if (valorUnit === 0 && valorTot === 0) {
-                descParts.push(token);
-              }
-            }
-          }
-
-          const descricao = descParts.join(' ') || parts.slice(descStartIdx, descStartIdx + 2).join(' ') || 'PEÇA JAHU';
-
-          if (valorTot === 0 && valorUnit > 0) {
-            valorTot = valorUnit * qtd;
-          }
-          if (valorUnit === 0 && valorTot > 0) {
-            valorUnit = valorTot / (qtd || 1);
-          }
-
-          if (descricao && !/EMPRESA|JAHU BORRACHAS/i.test(descricao) && (valorTot > 0 || possibleCode)) {
-            chunkItemsFound++;
-            results.push({
-              id: `jahu-parsed-${docIndex + 1}-${chunkItemsFound}-${Date.now()}`,
-              codigoProduto: possibleCode,
-              descricaoProduto: descricao,
-              autorizacao,
-              numeroNota: rowNf || numeroNota,
-              quantidade: qtd,
-              valorUnitario: valorUnit || valorTot,
-              valorTotal: valorTot || valorUnit,
-              dataEmissao: rowDate || dataEmissao,
-              fileName: chunkFileName,
-              pageNumber: docIndex + 1,
-              rawSnippet: chunk.slice(0, 300)
-            });
-          }
-        }
-      }
-    }
-
-    if (chunkItemsFound === 0) {
-      const genericProds = extractGenericProductsFromChunk(chunk, autorizacao, numeroNota);
-      if (genericProds.length > 0) {
-        genericProds.forEach((p, pIdx) => {
-          results.push({
-            id: `jahu-parsed-${docIndex + 1}-gen-${pIdx + 1}-${Date.now()}`,
-            codigoProduto: p.codigo && !/EMPRESA|JAHU/i.test(p.codigo) ? p.codigo : '580369',
-            descricaoProduto: p.descricao && !/EMPRESA|JAHU BORRACHAS/i.test(p.descricao) ? p.descricao : 'MANGUEIRA DO RADIADOR INF.',
-            autorizacao,
-            numeroNota: numeroNota || autorizacao,
-            quantidade: p.qtd || 1,
-            valorUnitario: p.valorUnitario || 50.00,
-            valorTotal: p.valorTotal || 50.00,
-            dataEmissao,
-            fileName: chunkFileName,
-            pageNumber: docIndex + 1,
-            rawSnippet: chunk.slice(0, 300)
-          });
-        });
-      } else {
-        const valueSearch = chunk.match(/(\d+[\.,]\d{2})/g);
-        let foundVal = 0;
-        if (valueSearch && valueSearch.length > 0) {
-          foundVal = parseCurrencyValue(valueSearch[valueSearch.length - 1]);
-        }
-        const descSearch = chunk.match(/(?:MANGUEIRA|AMORTECEDOR|KIT|BATENTE|BOMBA|FILTRO|COXIM|CORREIA|RETENTOR|DISCO|PASTILHA)[^\r\n0-9]+/i);
-        const codeSearch = chunk.match(/\b([0-9]{5,8})\b/);
-
-        results.push({
-          id: `jahu-parsed-${docIndex + 1}-fallback-${Date.now()}`,
-          codigoProduto: codeSearch && !/492839|4928395/.test(codeSearch[1]) ? codeSearch[1] : '580369',
-          descricaoProduto: descSearch ? descSearch[0].trim() : 'MANGUEIRA DO RADIADOR INF.',
-          autorizacao,
-          numeroNota: numeroNota || autorizacao,
-          quantidade: 1,
-          valorUnitario: foundVal || 50.00,
-          valorTotal: foundVal || 50.00,
-          dataEmissao,
-          fileName: chunkFileName,
-          pageNumber: docIndex + 1,
-          rawSnippet: chunk.slice(0, 300)
-        });
-      }
-    }
+      results.push({
+        id: `jahu-parsed-${sIdx + 1}-${results.length + 1}-${Date.now()}`,
+        autorizacao,
+        destinatario,
+        codigoProduto: codigo,
+        descricaoProduto: descricao,
+        quantidade: qtd,
+        valorUnitario,
+        valorTotal,
+        numeroNota,
+        dataEmissao,
+        fileName: section.name,
+        pageNumber: sIdx + 1,
+        rawSnippet: section.body.slice(0, 300)
+      });
+    });
   });
 
   return results;
@@ -2179,9 +2007,6 @@ export function matchJahuItemsWithStock(
     if (best) {
       matchedStockIds.add(best.candidate.idStock);
       const proposedStatus = 'Emitir NF';
-      const autStr = parsed.autorizacao || 'JAHU-001';
-      const cleanNf = (str: string) => (str || '').replace(/\./g, '').trim();
-      const nfStr = cleanNf(parsed.numeroNota);
 
       matched.push({
         parsedItem: parsed,
@@ -2190,10 +2015,8 @@ export function matchJahuItemsWithStock(
         matchReasons: best.reasons.length > 0 ? best.reasons : ['Cruzamento de itens Jahu'],
         statusSource: best.poolSource,
         proposedStatus,
-        proposedObsNotaFiscal: `Nro Autorização: ${autStr} - NF ${nfStr}`,
+        ...buildApprovalProposal(parsed),
         proposedObservacoesGerais: best.candidate.observacoesGerais || '',
-        proposedMotivo: `NF ${nfStr}`,
-        proposedNfOrigem: nfStr,
         approved: true
       });
     } else {

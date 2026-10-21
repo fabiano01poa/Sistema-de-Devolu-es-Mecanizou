@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useMemo } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { 
   X, 
   Upload, 
@@ -16,20 +16,18 @@ import {
   ShieldCheck,
   Building2,
   Mail,
-  Trash2,
-  Search
+  Trash2
 } from 'lucide-react';
 import { StockItem } from '../types';
-import { 
-  ParsedApprovalItem, 
-  ApprovalMatchResult, 
-  parseGrupoRealApprovalText, 
+import {
+  ParsedApprovalItem,
+  ApprovalMatchResult,
+  parseGrupoRealApprovalText,
   matchGrupoRealWithStock,
-  buildGrupoRealProposal,
-  normalizeText,
-  normalizeProductCode,
+  buildApprovalProposal,
   SAMPLE_GRUPO_REAL_APPROVAL_OCR
 } from '../utils/approvalParser';
+import { StockItemSearchSelect } from './StockItemSearchSelect';
 
 interface GrupoRealApprovalModalProps {
   isOpen: boolean;
@@ -108,7 +106,7 @@ export const GrupoRealApprovalModal: React.FC<GrupoRealApprovalModalProps> = ({
       matchReasons: ['Vinculado manualmente pelo operador (Grupo Real)'],
       statusSource: 'outro',
       proposedStatus: 'Emitir NF',
-      ...buildGrupoRealProposal(un),
+      ...buildApprovalProposal(un),
       proposedObservacoesGerais: stockItem.observacoesGerais || '',
       approved: true
     };
@@ -888,135 +886,6 @@ export const GrupoRealApprovalModal: React.FC<GrupoRealApprovalModalProps> = ({
         )}
 
       </div>
-    </div>
-  );
-};
-
-interface StockItemSearchSelectProps {
-  candidates: Array<{ item: StockItem; originalIdx: number }>;
-  onSelect: (originalIdx: number) => void;
-  ariaLabel: string;
-}
-
-const MAX_VISIBLE_OPTIONS = 50;
-
-// Campo de busca para o vínculo manual: filtra por código, descrição, ID, NF origem, status ou fornecedor
-const StockItemSearchSelect: React.FC<StockItemSearchSelectProps> = ({ candidates, onSelect, ariaLabel }) => {
-  const [query, setQuery] = useState('');
-  const [isOpen, setIsOpen] = useState(false);
-  const [activeIdx, setActiveIdx] = useState(0);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const listId = useMemo(() => `real-stock-search-${Math.random().toString(36).slice(2)}`, []);
-
-  const indexed = useMemo(() => candidates.map(c => ({
-    ...c,
-    text: normalizeText([
-      c.item.idStock, c.item.codigo, c.item.codigoAlternativo, c.item.descricao,
-      c.item.nfOrigem, c.item.statusDevolucao, c.item.fornecedor, c.item.novoFornecedorFilial
-    ].filter(Boolean).join(' ')),
-    codes: [c.item.codigo, c.item.codigoAlternativo].map(normalizeProductCode).filter(Boolean)
-  })), [candidates]);
-
-  const filtered = useMemo(() => {
-    const terms = normalizeText(query).split(' ').filter(Boolean);
-    if (terms.length === 0) return indexed;
-    // Todos os termos precisam aparecer; código também casa sem hífen/ponto (SCT-68 = SCT68)
-    return indexed.filter(c => terms.every(t =>
-      c.text.includes(t) || c.codes.some(code => code.includes(normalizeProductCode(t)))
-    ));
-  }, [indexed, query]);
-
-  const visible = filtered.slice(0, MAX_VISIBLE_OPTIONS);
-
-  useEffect(() => {
-    if (!isOpen) return;
-    const handleClickOutside = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) setIsOpen(false);
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [isOpen]);
-
-  const choose = (originalIdx: number) => {
-    setIsOpen(false);
-    setQuery('');
-    onSelect(originalIdx);
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      setIsOpen(true);
-      setActiveIdx(i => Math.min(i + 1, visible.length - 1));
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      setActiveIdx(i => Math.max(i - 1, 0));
-    } else if (e.key === 'Enter' && isOpen && visible[activeIdx]) {
-      e.preventDefault();
-      choose(visible[activeIdx].originalIdx);
-    } else if (e.key === 'Escape') {
-      setIsOpen(false);
-    }
-  };
-
-  return (
-    <div ref={containerRef} className="relative flex-1">
-      <div className="relative">
-        <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-        <input
-          type="text"
-          role="combobox"
-          aria-label={ariaLabel}
-          aria-expanded={isOpen}
-          aria-controls={listId}
-          aria-autocomplete="list"
-          value={query}
-          onChange={e => { setQuery(e.target.value); setActiveIdx(0); setIsOpen(true); }}
-          onFocus={() => setIsOpen(true)}
-          onKeyDown={handleKeyDown}
-          placeholder={`Buscar no estoque por código, descrição ou NF (${candidates.length} itens em negociação)...`}
-          className="w-full bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 text-xs rounded-lg pl-8 pr-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
-        />
-      </div>
-
-      {isOpen && (
-        <ul
-          id={listId}
-          role="listbox"
-          className="absolute z-20 mt-1 w-full max-h-64 overflow-y-auto bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg shadow-lg text-xs"
-        >
-          {visible.length === 0 ? (
-            <li className="px-3 py-2 text-slate-500 dark:text-slate-400">Nenhum item do estoque encontrado para "{query}".</li>
-          ) : visible.map(({ item, originalIdx }, i) => (
-            <li
-              key={`real-stock-opt-${item.idStock || 'item'}-${originalIdx}`}
-              role="option"
-              aria-selected={i === activeIdx}
-              onMouseDown={e => { e.preventDefault(); choose(originalIdx); }}
-              onMouseEnter={() => setActiveIdx(i)}
-              className={`px-3 py-2 cursor-pointer border-b last:border-b-0 border-slate-100 dark:border-slate-800 ${i === activeIdx ? 'bg-amber-50 dark:bg-amber-950/40' : ''}`}
-            >
-              <div className="flex items-center gap-2">
-                <span className="font-mono font-bold text-slate-900 dark:text-slate-100">{item.codigo || 'sem cód.'}</span>
-                <span className="text-slate-700 dark:text-slate-200 truncate">{item.descricao}</span>
-              </div>
-              <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                {[
-                  `ID ${item.idStock}`,
-                  item.nfOrigem ? `NF ${item.nfOrigem}` : '',
-                  item.valorTotal || item.valorUnitario || 'R$ 0,00',
-                  item.statusDevolucao || 'Sem status'
-                ].filter(Boolean).join(' · ')}
-              </div>
-            </li>
-          ))}
-          {filtered.length > MAX_VISIBLE_OPTIONS && (
-            <li className="px-3 py-1.5 text-[11px] text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-900">
-              Mostrando {MAX_VISIBLE_OPTIONS} de {filtered.length}. Digite mais para refinar.
-            </li>
-          )}
-        </ul>
-      )}
     </div>
   );
 };

@@ -23,9 +23,11 @@ import {
   ApprovalMatchResult, 
   parseJahuApprovalText, 
   matchJahuItemsWithStock,
+  buildApprovalProposal,
   SAMPLE_JAHU_APPROVAL_OCR,
   parseCurrencyValue
 } from '../utils/approvalParser';
+import { StockItemSearchSelect } from './StockItemSearchSelect';
 
 interface JahuApprovalModalProps {
   isOpen: boolean;
@@ -54,13 +56,15 @@ export const JahuApprovalModal: React.FC<JahuApprovalModalProps> = ({
 
   const handleDownloadUnmatchedCsv = () => {
     if (unmatchedItems.length === 0) return;
-    const headers = ['Autorizacao', 'Numero Nota', 'Descricao Produto', 'Quantidade', 'Valor Total', 'Arquivo Origem'];
+    const headers = ['Autorizacao', 'Numero Nota', 'Codigo Produto', 'Descricao Produto', 'Quantidade', 'Valor Unitario', 'Valor Total', 'Arquivo Origem'];
     const rows = unmatchedItems.map(item => [
-      item.autorizacao || 'JAHU-98214',
+      item.autorizacao || '',
       item.numeroNota || '',
+      item.codigoProduto || '',
       `"${(item.descricaoProduto || '').replace(/"/g, '""')}"`,
       item.quantidade || 1,
-      (item.valorTotal || 0).toFixed(2),
+      (item.valorUnitario || 0).toFixed(2).replace('.', ','),
+      (item.valorTotal || 0).toFixed(2).replace('.', ','),
       `"${(item.fileName || '').replace(/"/g, '""')}"`
     ]);
     const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(';'), ...rows.map(r => r.join(';'))].join('\n');
@@ -78,7 +82,7 @@ export const JahuApprovalModal: React.FC<JahuApprovalModalProps> = ({
     const subject = encodeURIComponent('Relatório de Aprovações Pendentes Sem Match - Jahu');
     let bodyLines = 'Relatório de Aprovações Pendentes (Jahu - Sem Match Automático):\n\n';
     unmatchedItems.forEach((item, idx) => {
-      bodyLines += `${idx + 1}. AD: ${item.autorizacao || 'JAHU-98214'} | NF: ${item.numeroNota || '—'} | Produto: ${item.descricaoProduto} | Valor: R$ ${(item.valorTotal || 0).toFixed(2)} | Arquivo: ${item.fileName || 'N/A'}\n`;
+      bodyLines += `${idx + 1}. AD: ${item.autorizacao || '—'} | NF: ${item.numeroNota || '—'} | Cód.: ${item.codigoProduto || '—'} | Produto: ${item.descricaoProduto} | Qtd: ${item.quantidade || 1} | Valor: R$ ${(item.valorTotal || 0).toFixed(2)} | Arquivo: ${item.fileName || 'N/A'}\n`;
     });
     const body = encodeURIComponent(bodyLines);
     window.location.href = `mailto:appestoque@mecanizou.com?subject=${subject}&body=${body}`;
@@ -99,10 +103,8 @@ export const JahuApprovalModal: React.FC<JahuApprovalModalProps> = ({
       matchReasons: ['Vinculado manualmente pelo operador (Jahu)'],
       statusSource: 'outro',
       proposedStatus: 'Emitir NF',
-      proposedObsNotaFiscal: `Código Autorização: ${un.autorizacao || 'JAHU-98214'} - NF ${un.numeroNota || ''}`,
+      ...buildApprovalProposal(un),
       proposedObservacoesGerais: stockItem.observacoesGerais || '',
-      proposedMotivo: un.numeroNota || '',
-      proposedNfOrigem: un.numeroNota || '',
       approved: true
     };
 
@@ -114,6 +116,23 @@ export const JahuApprovalModal: React.FC<JahuApprovalModalProps> = ({
     });
     setUnmatchedItems(prev => prev.filter((_, idx) => idx !== unmatchedIdx));
   };
+
+  // Itens do estoque já vinculados (auto ou manual) não podem receber outra aprovação
+  const linkedStockIds = new Set(matchedResults.map(m => m.stockItem.idStock));
+
+  // Opções do vínculo manual: Jahu, em negociação, ainda não vinculados
+  const manualLinkCandidates = stockItems
+    .map((item, originalIdx) => ({ item, originalIdx }))
+    .filter(({ item }) => {
+      if (linkedStockIds.has(item.idStock)) return false;
+      const forn = (item.fornecedor || '').toLowerCase();
+      const filial = (item.novoFornecedorFilial || '').toLowerCase();
+      const original = (item.fornecedorOriginal || '').toLowerCase();
+      const statusDev = (item.statusDevolucao || '').toLowerCase();
+      const isSupplier = forn.includes('jahu') || filial.includes('jahu') || original.includes('jahu');
+      const isEmNegociacao = statusDev.includes('negociação') || statusDev.includes('negociacao');
+      return isSupplier && isEmNegociacao;
+    });
 
   const handleRemoveUnmatchedItem = (unmatchedIdx: number) => {
     setUnmatchedItems(prev => prev.filter((_, idx) => idx !== unmatchedIdx));
@@ -228,7 +247,8 @@ export const JahuApprovalModal: React.FC<JahuApprovalModalProps> = ({
       processTextAndMatch(data.extractedText, fileList.map(f => f.name));
     } catch (err: any) {
       console.error('Erro no upload de documento Jahu:', err);
-      processTextAndMatch(SAMPLE_JAHU_APPROVAL_OCR, fileList.map(f => f.name));
+      setErrorMessage('Não foi possível ler o arquivo enviado: ' + (err.message || 'Erro no servidor'));
+      setIsProcessing(false);
     }
   };
 
@@ -266,7 +286,7 @@ export const JahuApprovalModal: React.FC<JahuApprovalModalProps> = ({
         if (selectedMatchIndices.has(idx)) {
           const item = { ...res.stockItem };
           item.statusDevolucao = res.proposedStatus;
-          item.obsNotaFiscal = res.proposedObsNotaFiscal;
+          item.obsNotaFiscal = res.proposedObsNotaFiscal || item.obsNotaFiscal;
           if (res.proposedNfOrigem) {
             item.nfOrigem = res.proposedNfOrigem;
           }
@@ -518,7 +538,7 @@ export const JahuApprovalModal: React.FC<JahuApprovalModalProps> = ({
                             <tr className="hover:bg-slate-900/40">
                               <td className="p-3 font-sans font-bold text-slate-300">Código Autorização</td>
                               <td className="p-3 text-slate-500 bg-indigo-950/10">—</td>
-                              <td className="p-3 text-indigo-300 font-bold bg-indigo-950/10">{parsed.autorizacao || 'JAHU-98214'}</td>
+                              <td className="p-3 text-indigo-300 font-bold bg-indigo-950/10">{parsed.autorizacao || '—'}</td>
                               <td className="p-3 text-center">
                                 <span className="px-2 py-0.5 bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 rounded text-[10px] font-bold">Documento</span>
                               </td>
@@ -659,7 +679,7 @@ export const JahuApprovalModal: React.FC<JahuApprovalModalProps> = ({
                   <div className="space-y-2">
                     {unmatchedItems.map((un, unIdx) => (
                       <div 
-                        key={`jahu-unmatched-${unIdx}`}
+                        key={un.id || `jahu-unmatched-${unIdx}`}
                         className="p-4 bg-slate-950 border border-slate-800 rounded-xl space-y-3 shadow-sm"
                       >
                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs pb-2 border-b border-slate-800/80">
@@ -735,33 +755,12 @@ export const JahuApprovalModal: React.FC<JahuApprovalModalProps> = ({
 
                         {/* Manual Linking Selector & Exclude */}
                         <div className="pt-2 flex flex-col sm:flex-row items-stretch sm:items-center gap-2 text-xs">
-                          <select
-                            onChange={e => {
-                              if (e.target.value) {
-                                handleManualLinkStockItem(unIdx, e.target.value);
-                              }
-                            }}
-                            defaultValue=""
-                            className="flex-1 bg-slate-900 border border-slate-700 text-slate-100 text-xs rounded-lg px-2.5 py-1.5 focus:ring-indigo-500 focus:border-indigo-500"
-                          >
-                            <option value="">Selecione um item do estoque Jahu (Em negociação)...</option>
-                            {stockItems
-                              .map((item, originalIdx) => ({ item, originalIdx }))
-                              .filter(({ item }) => {
-                                const forn = (item.fornecedor || '').toLowerCase();
-                                const filial = (item.novoFornecedorFilial || '').toLowerCase();
-                                const original = (item.fornecedorOriginal || '').toLowerCase();
-                                const statusDev = (item.statusDevolucao || '').toLowerCase();
-                                const isSupplier = forn.includes('jahu') || filial.includes('jahu') || original.includes('jahu');
-                                const isEmNegociacao = statusDev.includes('negociação') || statusDev.includes('negociacao');
-                                return isSupplier && isEmNegociacao;
-                              })
-                              .map(({ item, originalIdx }) => (
-                                <option key={`jahu-stock-opt-${item.idStock || 'item'}-${originalIdx}`} value={`${originalIdx}`}>
-                                  {item.idStock} - {item.descricao ? item.descricao.slice(0, 35) : ''}... - {item.valorTotal || item.valorUnitario || 'R$ 0,00'} ({item.statusDevolucao || 'Sem status'})
-                                </option>
-                              ))}
-                          </select>
+                          <StockItemSearchSelect
+                            tone="dark"
+                            candidates={manualLinkCandidates}
+                            ariaLabel={`Vincular ${un.codigoProduto || un.descricaoProduto} a um item do estoque`}
+                            onSelect={originalIdx => handleManualLinkStockItem(unIdx, String(originalIdx))}
+                          />
                           <button
                             type="button"
                             onClick={() => handleRemoveUnmatchedItem(unIdx)}
