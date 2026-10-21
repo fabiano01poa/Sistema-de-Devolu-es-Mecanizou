@@ -25,6 +25,7 @@ React 19 + Vite 6 + Tailwind 4 + TypeScript 5.8 (frontend) · Express 4 em `serv
 - Escritas em planilha/Drive e comandos destrutivos (`rm`, `git push`, `reset`) só com confirmação explícita.
 - Nunca faça commit sem pedido explícito.
 - Textos de UI em pt-BR; código e identificadores seguem o arquivo ao redor.
+- Toda comunicação com o usuário (perguntas, opções, respostas, resumos) em português do Brasil, sem termos em inglês desnecessários.
 
 ## Segurança
 - Segredos só em `.env` (nunca lido) — referência em `.env.example`. Nunca coloque segredos em `CLAUDE.md` ou `.claude/`.
@@ -38,4 +39,4 @@ Pesquisa ampla → `researcher` · mudança multi-módulo/dependência → `arch
 Busque pelo símbolo (Grep) antes de abrir arquivos; leia trechos com offset/limit — `server.ts`, `approvalParser.ts`, `NegociarView.tsx` têm 1–2,6k linhas. Não cole arquivos ou logs inteiros: resuma. Respostas de agents compactas. Regra repetida vira skill; regra de área vai no agent dela.
 
 ## Definição de pronto
-1. `npm run lint` sem erros novos. 2. Comportamento validado (script ou `npm run dev`) quando houver lógica. 3. Sem arquivos fora do escopo alterados. 4. Resumo: Changed / Validated / Notes.
+1. `npm run lint` sem erros novos. 2. Comportamento validado (script ou `npm run dev`) quando houver lógica. 3. Sem arquivos fora do escopo alterados. 4. Resumo: Alterado / Validado / Observações.
