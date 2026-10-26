@@ -917,13 +917,15 @@ app.post("/api/update-items", async (req, res) => {
       }
     }
 
-    // Persist webhookUrl if supplied in body
-    if (webhookUrl && typeof webhookUrl === "string" && webhookUrl.trim().startsWith("http")) {
+    // A URL dos Secrets (GOOGLE_SHEETS_WEBHOOK_URL) sempre vence; a URL guardada no navegador só vale sem secret.
+    // Antes, uma URL antiga salva em algum navegador era usada no lugar da correta ("Nao autorizado").
+    const envWebhook = (process.env.GOOGLE_SHEETS_WEBHOOK_URL || "").trim();
+    if (!envWebhook && webhookUrl && typeof webhookUrl === "string" && webhookUrl.trim().startsWith("http")) {
       saveSyncConfig({ webhookUrl: webhookUrl.trim() });
     }
 
     const cfg = getSyncConfig();
-    const targetWebhook = (webhookUrl || cfg.webhookUrl || process.env.GOOGLE_SHEETS_WEBHOOK_URL || "").trim();
+    const targetWebhook = (envWebhook || webhookUrl || cfg.webhookUrl || "").trim();
     if (!targetWebhook || !targetWebhook.startsWith("http")) {
       return res.json({
         success: false,
@@ -1008,7 +1010,7 @@ app.get("/api/sync-config", (req, res) => {
       cfg = JSON.parse(fs.readFileSync(SYNC_CONFIG_PATH, "utf-8"));
     }
   } catch (_) {}
-  const currentUrl = cfg.webhookUrl || process.env.GOOGLE_SHEETS_WEBHOOK_URL || "";
+  const currentUrl = process.env.GOOGLE_SHEETS_WEBHOOK_URL || cfg.webhookUrl || "";
   res.json({
     configured: Boolean(currentUrl && currentUrl.trim().startsWith("http")),
     webhookUrl: currentUrl,
