@@ -2,6 +2,7 @@ import express from "express";
 import path from "path";
 import fs from "fs";
 import crypto from "crypto";
+import zlib from "zlib";
 import { createServer as createViteServer } from "vite";
 import Papa from "papaparse";
 import { createRequire } from "module";
@@ -656,6 +657,20 @@ sheetCache.set(defaultCacheKey, {
 });
 
 // Endpoint to fetch Google Sheet CSV data
+// Cloud Run (AI Studio) recusa respostas acima de 32 MB; a planilha inteira em JSON passa de 50 MB.
+// Compacta com gzip quando o navegador aceita (sempre, na prática): fica em torno de 10% do tamanho.
+function sendLargeJson(req: express.Request, res: express.Response, body: unknown) {
+  const json = JSON.stringify(body);
+  res.setHeader("Vary", "Accept-Encoding");
+  if (!/\bgzip\b/.test(String(req.headers["accept-encoding"] || ""))) {
+    return res.type("application/json").send(json);
+  }
+  const gz = zlib.gzipSync(json, { level: 6 });
+  res.setHeader("Content-Encoding", "gzip");
+  res.setHeader("Content-Type", "application/json; charset=utf-8");
+  return res.send(gz);
+}
+
 app.get("/api/sheet-data", async (req, res) => {
   try {
     const customUrl = req.query.url as string;
@@ -683,7 +698,7 @@ app.get("/api/sheet-data", async (req, res) => {
           return locClean === targetLocalidade || locClean.includes(targetLocalidade);
         });
       }
-      return res.json({
+      return sendLargeJson(req, res, {
         success: true,
         source: isCached ? "google_sheets_cached" : "google_sheets",
         message: noticeMsg,
