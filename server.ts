@@ -717,7 +717,18 @@ app.get("/api/sheet-data", async (req, res) => {
         return buildSuccessResponse(cachedEntry.allRows, cachedEntry.totalFound, cachedEntry.availableLocalidades, true);
       }
       
-      // Stale or forced: trigger background refresh and return cached immediately
+      // Forçado (botão Sincronizar): espera a leitura nova; se falhar ou demorar, cai no cache
+      if (isForce) {
+        const fresh = await Promise.race([
+          fetchAndParseGoogleSheet(sheetId, gid).catch(() => null),
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), 45000))
+        ]);
+        if (fresh) {
+          return buildSuccessResponse(fresh.allRows, fresh.totalFound, fresh.availableLocalidades, false);
+        }
+      }
+
+      // Stale: trigger background refresh and return cached immediately
       if (!isFetchingMap.get(cacheKey)) {
         isFetchingMap.set(cacheKey, true);
         fetchAndParseGoogleSheet(sheetId, gid).finally(() => {
@@ -779,22 +790,39 @@ app.get("/api/health", (req, res) => {
 async function postToGoogleAppsScript(url: string, payload: any, maxRetries = 5): Promise<{ status: number; text: string; ok: boolean }> {
   const cleanUrl = url.trim();
   const items = payload.items || [];
-  
-  // If items are many, chunk them into batches of 50 to prevent 413 Request Entity Too Large & GAS timeouts
-  if (Array.isArray(items) && items.length > 50) {
-    let lastResult = { status: 200, text: '{"success":true}', ok: true };
-    for (let i = 0; i < items.length; i += 50) {
-      const chunk = items.slice(i, i + 50);
-      const chunkPayload = { ...payload, items: chunk };
-      const res = await postToGoogleAppsScriptSingle(cleanUrl, chunkPayload, maxRetries);
-      lastResult = res;
-      if (!res.ok) break;
-      await new Promise(r => setTimeout(r, 1500));
-    }
-    return lastResult;
+
+  // Lotes de 50 para evitar 413 e o tempo limite do Apps Script
+  if (!Array.isArray(items) || items.length <= 50) {
+    return await postToGoogleAppsScriptSingle(cleanUrl, payload, maxRetries);
   }
 
-  return await postToGoogleAppsScriptSingle(cleanUrl, payload, maxRetries);
+  let updatedCount = 0;
+  const notFound: string[] = [];
+  for (let i = 0; i < items.length; i += 50) {
+    const chunk = items.slice(i, i + 50);
+    const res = await postToGoogleAppsScriptSingle(cleanUrl, { ...payload, items: chunk }, maxRetries);
+    let json: any = null;
+    try { json = JSON.parse(res.text); } catch (_) {}
+    const chunkOk = res.ok && json && json.success !== false && !json.error;
+    if (!chunkOk) {
+      const notWritten = items.slice(i).map((it: any) => String(it.idStock || "").trim());
+      return {
+        status: res.status,
+        ok: true,
+        text: JSON.stringify({
+          success: false,
+          partial: true,
+          error: json?.error || json?.message || `Status HTTP ${res.status}`,
+          updatedCount,
+          notFound: [...notFound, ...notWritten]
+        })
+      };
+    }
+    updatedCount += json.updatedCount !== undefined ? json.updatedCount : chunk.length;
+    if (Array.isArray(json.notFound)) notFound.push(...json.notFound.map((id: any) => String(id).trim()));
+    await new Promise(r => setTimeout(r, 1500));
+  }
+  return { status: 200, ok: true, text: JSON.stringify({ success: true, updatedCount, notFound }) };
 }
 
 async function postToGoogleAppsScriptSingle(url: string, payload: any, maxRetries = 5): Promise<{ status: number; text: string; ok: boolean }> {
@@ -807,17 +835,10 @@ async function postToGoogleAppsScriptSingle(url: string, payload: any, maxRetrie
       const urlObj = new URL(cleanUrl);
       urlObj.searchParams.set("action", payload.action || "update_items");
 
-      const formData = new URLSearchParams();
-      formData.append("action", payload.action || "update_items");
-      formData.append("payload", JSON.stringify(payload));
-      if (payload.items) {
-        formData.append("items", JSON.stringify(payload.items));
-      }
-
       const res = await fetch(urlObj.toString(), {
         method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded;charset=utf-8" },
-        body: formData.toString(),
+        headers: { "Content-Type": "application/json;charset=utf-8" },
+        body: JSON.stringify(payload),
         redirect: "follow"
       });
       const status = res.status;
@@ -865,48 +886,9 @@ app.post("/api/update-items", async (req, res) => {
       return res.status(400).json({ success: false, message: "Nenhum item enviado para atualização." });
     }
 
-    const updatedItems = rawItems.map((item: any) => ({
-      ...item,
-      observacoesGerais: item.observacoesGerais || item.observacoes || item.obsGerais || item.obs || item.observacao || '',
-      observacoes: item.observacoesGerais || item.observacoes || item.obsGerais || item.obs || item.observacao || '',
-      obsGerais: item.observacoesGerais || item.observacoes || item.obsGerais || item.obs || item.observacao || '',
-      obsNotaFiscal: item.obsNotaFiscal || item.obsNf || '',
-      obsNf: item.obsNotaFiscal || item.obsNf || '',
-      statusDevolucao: item.statusDevolucao || item.status || '',
-      status: item.statusDevolucao || item.status || '',
-      obsStatusDevolucao: item.obsStatusDevolucao || item.obsStatus || '',
-      obsStatus: item.obsStatusDevolucao || item.obsStatus || '',
-      ultimaInteracao: item.ultimaInteracao || item.interacao || '',
-      interacao: item.ultimaInteracao || item.interacao || '',
-      notaFiscalSaida: item.notaFiscalSaida || item.nfSaida || '',
-      nfSaida: item.notaFiscalSaida || item.nfSaida || ''
-    }));
-
-    // Update in-memory sample dataset for items that exist in SAMPLE_DATA
-    for (const item of updatedItems) {
-      const idx = SAMPLE_DATA.findIndex(s => s.idStock && s.idStock === item.idStock);
-      if (idx !== -1) {
-        SAMPLE_DATA[idx] = {
-          ...SAMPLE_DATA[idx],
-          ...item
-        };
-      }
-    }
-
-    // Also update any in-memory cached sheet rows so app refreshes reflect changes immediately
-    sheetCache.forEach((entry) => {
-      if (entry && Array.isArray(entry.allRows)) {
-        for (const item of updatedItems) {
-          const rowIdx = entry.allRows.findIndex(r => r.idStock && r.idStock === item.idStock);
-          if (rowIdx !== -1) {
-            entry.allRows[rowIdx] = {
-              ...entry.allRows[rowIdx],
-              ...item
-            };
-          }
-        }
-      }
-    });
+    // O app envia só idStock + campos alterados. Completar com vazio faria o script apagar a planilha.
+    const updatedItems = rawItems.filter((item: any) => item && String(item.idStock || "").trim());
+    const allIds = updatedItems.map((item: any) => String(item.idStock).trim());
 
     // Persistent sync configuration helpers
     const SYNC_CONFIG_PATH = path.join(process.cwd(), "sync_config.json");
@@ -942,59 +924,74 @@ app.post("/api/update-items", async (req, res) => {
 
     const cfg = getSyncConfig();
     const targetWebhook = (webhookUrl || cfg.webhookUrl || process.env.GOOGLE_SHEETS_WEBHOOK_URL || "").trim();
-    let syncedToSheet = false;
-    let webhookMessage = "";
-
-    if (targetWebhook && targetWebhook.startsWith("http")) {
-      try {
-        const webhookResult = await postToGoogleAppsScript(targetWebhook, {
-          action: "update_items",
-          items: updatedItems
-        });
-
-        const isSuccessfulStatus = webhookResult.ok;
-        if (isSuccessfulStatus) {
-          syncedToSheet = true;
-          let respJson: any = null;
-          try {
-            respJson = JSON.parse(webhookResult.text);
-          } catch (_) {}
-          const updatedNum = respJson?.updatedCount !== undefined ? respJson.updatedCount : updatedItems.length;
-          webhookMessage = `Alterações gravadas com sucesso na sua Planilha Google! (${updatedNum} item(ns) sincronizado(s))`;
-          saveSyncConfig({
-            lastSyncStatus: `Sucesso (${updatedNum} itens)`,
-            lastSyncTime: new Date().toISOString()
-          });
-        } else {
-          let respJson: any = null;
-          try { respJson = JSON.parse(webhookResult.text); } catch (_) {}
-          const errMsg = respJson?.error || `Status HTTP ${webhookResult.status} - Resposta: ${webhookResult.text.slice(0, 100)}`;
-          
-          webhookMessage = `Falha ao sincronizar com a Planilha: ${errMsg}. As alterações foram salvas no aplicativo.`;
-          saveSyncConfig({
-            lastSyncStatus: `Erro: ${errMsg}`,
-            lastSyncTime: new Date().toISOString()
-          });
-        }
-      } catch (err: any) {
-        console.error("Erro ao enviar para Google Apps Script Webhook:", err.message);
-        webhookMessage = `Não foi possível conectar ao Webhook da Planilha: ${err.message}. As alterações foram salvas localmente no aplicativo.`;
-        saveSyncConfig({
-          lastSyncStatus: `Falha: ${err.message}`,
-          lastSyncTime: new Date().toISOString()
-        });
-      }
-    } else {
-      webhookMessage = "Alterações salvas no aplicativo. Para gravar em tempo real na sua planilha Google, configure a URL do Webhook do Google Apps Script no topo.";
+    if (!targetWebhook || !targetWebhook.startsWith("http")) {
+      return res.json({
+        success: false,
+        syncedToSheet: false,
+        failedIds: allIds,
+        webhookUrlConfigured: false,
+        message: "Alteração NÃO gravada: a gravação na planilha não está configurada (URL do Webhook do Apps Script)."
+      });
     }
 
-    return res.json({
-      success: true,
-      updatedCount: updatedItems.length,
-      syncedToSheet,
-      webhookUrlConfigured: Boolean(targetWebhook && targetWebhook.startsWith("http")),
-      message: webhookMessage
-    });
+    try {
+      const webhookResult = await postToGoogleAppsScript(targetWebhook, {
+        action: "update_items",
+        items: updatedItems
+      });
+      let respJson: any = null;
+      try { respJson = JSON.parse(webhookResult.text); } catch (_) {}
+
+      // O Apps Script responde HTTP 200 mesmo quando falha; vale o conteúdo da resposta
+      const scriptOk = webhookResult.ok && respJson && respJson.success !== false && !respJson.error;
+      if (!scriptOk) {
+        const errMsg = respJson?.error || respJson?.message || `Status HTTP ${webhookResult.status} - Resposta: ${webhookResult.text.slice(0, 100)}`;
+        saveSyncConfig({ lastSyncStatus: `Erro: ${errMsg}`, lastSyncTime: new Date().toISOString() });
+        const failedIds = respJson?.partial && Array.isArray(respJson.notFound) ? respJson.notFound : allIds;
+        return res.json({
+          success: false,
+          syncedToSheet: Boolean(respJson?.partial && respJson.updatedCount > 0),
+          failedIds,
+          webhookUrlConfigured: true,
+          message: `Alteração NÃO gravada na planilha: ${errMsg}`
+        });
+      }
+
+      const notFound: string[] = Array.isArray(respJson.notFound) ? respJson.notFound.map((id: any) => String(id).trim()) : [];
+      const written = updatedItems.filter((item: any) => !notFound.includes(String(item.idStock).trim()));
+
+      // Reflete no cache só o que a planilha confirmou
+      sheetCache.forEach((entry) => {
+        if (!entry || !Array.isArray(entry.allRows)) return;
+        for (const item of written) {
+          const rowIdx = entry.allRows.findIndex(r => r.idStock && r.idStock === item.idStock);
+          if (rowIdx !== -1) entry.allRows[rowIdx] = { ...entry.allRows[rowIdx], ...item };
+        }
+      });
+
+      const updatedNum = respJson.updatedCount !== undefined ? respJson.updatedCount : written.length;
+      saveSyncConfig({ lastSyncStatus: `Sucesso (${updatedNum} itens)`, lastSyncTime: new Date().toISOString() });
+      return res.json({
+        success: notFound.length === 0,
+        syncedToSheet: true,
+        updatedCount: updatedNum,
+        failedIds: notFound,
+        webhookUrlConfigured: true,
+        message: notFound.length === 0
+          ? `Alterações gravadas na planilha (${updatedNum} item(ns)).`
+          : `${updatedNum} item(ns) gravado(s); NÃO encontrados na planilha: ${notFound.join(", ")}.`
+      });
+    } catch (err: any) {
+      console.error("Erro ao enviar para Google Apps Script Webhook:", err.message);
+      saveSyncConfig({ lastSyncStatus: `Falha: ${err.message}`, lastSyncTime: new Date().toISOString() });
+      return res.json({
+        success: false,
+        syncedToSheet: false,
+        failedIds: allIds,
+        webhookUrlConfigured: true,
+        message: `Alteração NÃO gravada: não foi possível conectar ao Webhook da planilha (${err.message}).`
+      });
+    }
 
   } catch (error: any) {
     console.error("Error in /api/update-items:", error);

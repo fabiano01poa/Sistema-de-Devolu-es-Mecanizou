@@ -173,66 +173,32 @@ export default function App() {
     return Array.from(set).sort();
   }, [items]);
 
-  // Load persistent user modifications from localStorage
-  const getItemOverrides = (): Record<string, Partial<StockItem>> => {
+  // A planilha é a fonte da verdade. No navegador ficam só as gravações que ainda NÃO chegaram à planilha.
+  const PENDING_KEY = 'pending_sheet_writes_v1';
+  type PendingWrites = Record<string, Partial<StockItem> & { idStock: string }>;
+
+  const readPendingWrites = (): PendingWrites => {
     try {
-      const saved = localStorage.getItem('item_overrides_v2');
+      const saved = localStorage.getItem(PENDING_KEY);
       return saved ? JSON.parse(saved) : {};
     } catch {
       return {};
     }
   };
 
-  const updateItemOverrides = (updatedList: StockItem[]) => {
+  const [pendingWrites, setPendingWrites] = useState<PendingWrites>(() => {
     try {
-      const current = getItemOverrides();
-      updatedList.forEach(item => {
-        const rawId = item.idStock || item.codigo;
-        if (!rawId) return;
-        const key = String(rawId).trim().toLowerCase();
-        current[key] = {
-          ...(current[key] || {}),
-          statusDevolucao: item.statusDevolucao,
-          obsStatusDevolucao: item.obsStatusDevolucao,
-          observacoesGerais: item.observacoesGerais,
-          obsNotaFiscal: item.obsNotaFiscal,
-          notaFiscalSaida: item.notaFiscalSaida,
-          motivo: item.motivo,
-          urgente: item.urgente,
-          ultimaInteracao: item.ultimaInteracao,
-          dataUltimaAlteracao: item.dataUltimaAlteracao,
-          historicoAlteracoes: item.historicoAlteracoes
-        };
-      });
-      localStorage.setItem('item_overrides_v2', JSON.stringify(current));
-    } catch (e) {
-      console.error('Failed to save overrides:', e);
-    }
-  };
+      // Versão antiga reaplicava alterações locais por cima da planilha para sempre; descartada
+      localStorage.removeItem('item_overrides_v2');
+    } catch {}
+    return readPendingWrites();
+  });
 
-  const applyOverridesToData = (dataList: StockItem[]): StockItem[] => {
-    const overrides = getItemOverrides();
-    return dataList.map(item => {
-      const rawId = item.idStock || item.codigo;
-      if (!rawId) return item;
-      const cleanKey = String(rawId).trim().toLowerCase();
-      const noPunctKey = cleanKey.replace(/[^0-9a-z]/g, "");
-      const ov = overrides[cleanKey] || overrides[noPunctKey] || overrides[String(item.idStock || '').trim()];
-      if (!ov) return item;
-      return {
-        ...item,
-        statusDevolucao: ov.statusDevolucao !== undefined ? ov.statusDevolucao : item.statusDevolucao,
-        obsStatusDevolucao: ov.obsStatusDevolucao !== undefined ? ov.obsStatusDevolucao : item.obsStatusDevolucao,
-        observacoesGerais: ov.observacoesGerais !== undefined ? ov.observacoesGerais : item.observacoesGerais,
-        obsNotaFiscal: ov.obsNotaFiscal !== undefined ? ov.obsNotaFiscal : item.obsNotaFiscal,
-        notaFiscalSaida: ov.notaFiscalSaida !== undefined ? ov.notaFiscalSaida : item.notaFiscalSaida,
-        motivo: ov.motivo !== undefined ? ov.motivo : item.motivo,
-        urgente: ov.urgente !== undefined ? ov.urgente : item.urgente,
-        ultimaInteracao: ov.ultimaInteracao !== undefined ? ov.ultimaInteracao : item.ultimaInteracao,
-        dataUltimaAlteracao: ov.dataUltimaAlteracao !== undefined ? ov.dataUltimaAlteracao : item.dataUltimaAlteracao,
-        historicoAlteracoes: ov.historicoAlteracoes || item.historicoAlteracoes || []
-      };
-    });
+  const savePendingWrites = (next: PendingWrites) => {
+    setPendingWrites(next);
+    try {
+      localStorage.setItem(PENDING_KEY, JSON.stringify(next));
+    } catch {}
   };
 
   const fetchSheetData = async (customUrl?: string, customLocalidade?: string, isBackground = false, forceLive = false) => {
@@ -243,12 +209,12 @@ export default function App() {
     const targetLocalidade = customLocalidade !== undefined ? customLocalidade : selectedLocalidade;
 
     try {
-      const liveQuery = forceLive ? '&forceLive=true' : '';
+      const liveQuery = forceLive ? '&force=true' : '';
       const res = await fetch(`/api/sheet-data?url=${encodeURIComponent(targetUrl)}&localidade=${encodeURIComponent(targetLocalidade)}${liveQuery}`);
       if (res.ok) {
         const json = await res.json();
         if (json.data && json.data.length > 0 && json.source !== 'fallback_sample') {
-          const mergedData = applyOverridesToData(json.data);
+          const mergedData = json.data;
           setItems(mergedData);
           setSource(json.source || 'google_sheets');
           if (json.totalRows) setTotalSheetRows(json.totalRows);
@@ -274,7 +240,7 @@ export default function App() {
       console.warn('Server returned fallback sample or failed; attempting client-side direct CSV fetch...');
       const clientRes = await fetchSheetDirectlyFromClient(targetUrl);
       if (clientRes.data && clientRes.data.length > 0) {
-        const mergedData = applyOverridesToData(clientRes.data);
+        const mergedData = clientRes.data;
         setItems(mergedData);
         setSource('google_sheets');
         setTotalSheetRows(clientRes.totalRows);
@@ -291,7 +257,7 @@ export default function App() {
       try {
         const clientRes = await fetchSheetDirectlyFromClient(targetUrl);
         if (clientRes.data && clientRes.data.length > 0) {
-          const mergedData = applyOverridesToData(clientRes.data);
+          const mergedData = clientRes.data;
           setItems(mergedData);
           setSource('google_sheets');
           setTotalSheetRows(clientRes.totalRows);
@@ -371,7 +337,7 @@ export default function App() {
   const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
 
   const handleLoadCustomData = (customData: StockItem[]) => {
-    const merged = applyOverridesToData(customData);
+    const merged = customData;
     setItems(merged);
     setSource('custom_csv');
     setStatusMessage(`Carregado com sucesso ${customData.length} registros.`);
@@ -538,62 +504,78 @@ export default function App() {
     }).catch(() => {});
   };
 
-  const syncItemsToServer = async (itemsToSync: StockItem[]) => {
-    try {
-      const normalizedItems = itemsToSync.map(item => ({
-        ...item,
-        observacoesGerais: item.observacoesGerais || (item as any).observacoes || (item as any).obsGerais || (item as any).obs || (item as any).observacao || '',
-        observacoes: item.observacoesGerais || (item as any).observacoes || (item as any).obsGerais || (item as any).obs || (item as any).observacao || '',
-        obsGerais: item.observacoesGerais || (item as any).observacoes || (item as any).obsGerais || (item as any).obs || (item as any).observacao || '',
-        obsNotaFiscal: item.obsNotaFiscal || (item as any).obsNf || '',
-        obsNf: item.obsNotaFiscal || (item as any).obsNf || '',
-        statusDevolucao: item.statusDevolucao || (item as any).status || '',
-        status: item.statusDevolucao || (item as any).status || '',
-        obsStatusDevolucao: item.obsStatusDevolucao || (item as any).obsStatus || '',
-        obsStatus: item.obsStatusDevolucao || (item as any).obsStatus || '',
-        ultimaInteracao: item.ultimaInteracao || (item as any).interacao || '',
-        interacao: item.ultimaInteracao || (item as any).interacao || '',
-        notaFiscalSaida: item.notaFiscalSaida || (item as any).nfSaida || '',
-        nfSaida: item.notaFiscalSaida || (item as any).nfSaida || ''
-      }));
+  // Colunas que o Apps Script grava
+  const SHEET_WRITABLE_FIELDS = [
+    'statusDevolucao',
+    'obsStatusDevolucao',
+    'obsNotaFiscal',
+    'observacoesGerais',
+    'ultimaInteracao',
+    'nfOrigem',
+    'notaFiscalSaida'
+  ] as const;
 
-      // 1. Server-side sync API call
+  const sendWritesToSheet = async (writes: Array<Partial<StockItem> & { idStock: string }>) => {
+    if (writes.length === 0) return { success: true, message: '' };
+
+    // Guarda como pendente antes de enviar; sai da lista só quando a planilha confirmar
+    const pending = { ...readPendingWrites() };
+    writes.forEach(w => { pending[w.idStock] = { ...(pending[w.idStock] || {}), ...w }; });
+    savePendingWrites(pending);
+
+    let result: { success: boolean; message: string; failedIds?: string[] };
+    try {
       const res = await fetch('/api/update-items', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          items: normalizedItems,
-          webhookUrl: webhookUrl || undefined
-        })
+        body: JSON.stringify({ items: writes, webhookUrl: webhookUrl || undefined })
       });
-      const data = await res.json();
-      
-      // 2. Client-side direct fallback / dual push if webhookUrl is present
-      if (webhookUrl && webhookUrl.trim().startsWith('http')) {
-        try {
-          fetch(webhookUrl.trim(), {
-            method: 'POST',
-            mode: 'no-cors',
-            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-            body: JSON.stringify({
-              action: 'update_items',
-              items: normalizedItems
-            })
-          }).catch(() => {});
-        } catch (_) {}
-      }
-
-      if (data && data.message) {
-        setStatusMessage(data.message);
-        setTimeout(() => setStatusMessage(undefined), 7000);
-      }
+      result = await res.json();
     } catch (err) {
       console.error('Failed to sync items to server:', err);
+      result = { success: false, message: 'Alteração NÃO gravada: sem conexão com o servidor.' };
     }
+
+    const failed = new Set(result.failedIds || (result.success ? [] : writes.map(w => w.idStock)));
+    const after = { ...readPendingWrites() };
+    writes.forEach(w => { if (!failed.has(w.idStock)) delete after[w.idStock]; });
+    savePendingWrites(after);
+
+    if (result.message) {
+      setStatusMessage(result.message);
+      setTimeout(() => setStatusMessage(undefined), result.success ? 7000 : 20000);
+    }
+    return result;
+  };
+
+  // Envia só idStock + campos que mudaram em relação ao que veio da planilha
+  const syncItemsToServer = async (itemsToSync: StockItem[]) => {
+    const before = new Map(items.map(i => [i.idStock, i]));
+    const writes = itemsToSync
+      .filter(item => item.idStock)
+      .map(item => {
+        const orig = before.get(item.idStock);
+        const changed: Partial<StockItem> & { idStock: string } = { idStock: item.idStock };
+        SHEET_WRITABLE_FIELDS.forEach(field => {
+          const next = (item[field] ?? '') as string;
+          if (!orig || next !== ((orig[field] ?? '') as string)) (changed as any)[field] = next;
+        });
+        return changed;
+      })
+      .filter(w => Object.keys(w).length > 1);
+    return sendWritesToSheet(writes);
+  };
+
+  const handleRetryPendingWrites = () => {
+    sendWritesToSheet(Object.values(readPendingWrites()));
+  };
+
+  const handleDiscardPendingWrites = () => {
+    savePendingWrites({});
+    fetchSheetData(undefined, undefined, false, true);
   };
 
   const handleUpdateItem = (updatedItem: StockItem) => {
-    updateItemOverrides([updatedItem]);
     setItems(prev => prev.map(i => i.idStock === updatedItem.idStock ? updatedItem : i));
     if (detailNavList) {
       setDetailNavList(prev => prev ? prev.map(i => i.idStock === updatedItem.idStock ? updatedItem : i) : null);
@@ -667,8 +649,6 @@ export default function App() {
       updatedMap.set(orig.idStock, updated);
       return updated;
     });
-
-    updateItemOverrides(updatedList);
 
     setItems(prev => prev.map(i => updatedMap.get(i.idStock) || i));
     if (detailNavList) {
@@ -913,6 +893,30 @@ export default function App() {
               <RotateCcw className="w-4 h-4" />
               Exibir desde a Linha 1
             </button>
+          </div>
+        )}
+
+        {/* Gravações que não chegaram à planilha */}
+        {Object.keys(pendingWrites).length > 0 && (
+          <div role="alert" className={`border rounded-xl p-3.5 mb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs ${
+            isLight ? 'bg-red-50 border-red-300 text-red-900' : 'bg-red-950/40 border-red-800/60 text-red-200'
+          }`}>
+            <div className="flex items-center space-x-2">
+              <AlertTriangle className={`w-4 h-4 flex-shrink-0 ${isLight ? 'text-red-600' : 'text-red-400'}`} />
+              <span>
+                {Object.keys(pendingWrites).length} alteração(ões) NÃO chegaram à planilha
+                ({Object.keys(pendingWrites).slice(0, 3).join(', ')}{Object.keys(pendingWrites).length > 3 ? '…' : ''}).
+                A tela mostra os dados da planilha.
+              </span>
+            </div>
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <button onClick={handleRetryPendingWrites} className="px-3 py-1 rounded-lg bg-red-600 hover:bg-red-500 text-white font-bold">
+                Reenviar
+              </button>
+              <button onClick={handleDiscardPendingWrites} className={`px-3 py-1 rounded-lg font-semibold underline ${isLight ? 'hover:text-red-950' : 'hover:text-white'}`}>
+                Descartar
+              </button>
+            </div>
           </div>
         )}
 
