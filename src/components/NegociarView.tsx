@@ -45,7 +45,6 @@ import {
   isItemUrgent, 
   OFFICIAL_WARRANTY_STATUSES, 
   OFFICIAL_DEVOLUCAO_STATUSES, 
-  OFFICIAL_OBS_STATUS_DEVOLUCAO,
   isWarrantyItem, 
   isDevolucaoItem, 
   matchesStatusFilter, 
@@ -141,8 +140,9 @@ export const NegociarView: React.FC<NegociarViewProps> = ({ items = [], onSelect
     return (items || []).filter(i => isDevolucaoItem(i));
   }, [items]);
 
+  // Só o que já foi lançado na coluna (a planilha só aceita os valores da lista suspensa)
   const availableObsStatusList = useMemo(() => {
-    const set = new Set<string>(OFFICIAL_OBS_STATUS_DEVOLUCAO);
+    const set = new Set<string>();
     (items || []).forEach(i => {
       if (i.obsStatusDevolucao && i.obsStatusDevolucao.trim()) {
         set.add(i.obsStatusDevolucao.trim());
@@ -155,7 +155,7 @@ export const NegociarView: React.FC<NegociarViewProps> = ({ items = [], onSelect
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
   const [isBulkModalOpen, setIsBulkModalOpen] = useState<boolean>(false);
   const [targetStatus, setTargetStatus] = useState<string>('Em negociação');
-  const [targetObsStatusDevolucao, setTargetObsStatusDevolucao] = useState<string>(OFFICIAL_OBS_STATUS_DEVOLUCAO[0] || 'Aguardando aprovação fornecedor');
+  const [targetObsStatusDevolucao, setTargetObsStatusDevolucao] = useState<string>('');
   const [customObsStatusDevolucao, setCustomObsStatusDevolucao] = useState<string>('');
   const [isCustomObsStatusDevolucao, setIsCustomObsStatusDevolucao] = useState<boolean>(false);
   const [updateObsStatusDevolucao, setUpdateObsStatusDevolucao] = useState<boolean>(false);
@@ -2471,6 +2471,7 @@ export const NegociarView: React.FC<NegociarViewProps> = ({ items = [], onSelect
                       }}
                       className="w-full bg-slate-900 border border-slate-700 focus:border-indigo-500 text-xs text-slate-100 rounded-xl p-2.5 outline-none font-medium"
                     >
+                      <option value="" disabled>Selecione a observação...</option>
                       {availableObsStatusList.map((obs, oIdx) => (
                         <option key={`bulk-obs-st-${obs}-${oIdx}`} value={obs}>
                           {obs}

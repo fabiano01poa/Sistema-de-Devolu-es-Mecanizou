@@ -972,6 +972,10 @@ app.post("/api/update-items", async (req, res) => {
       });
 
       const updatedNum = respJson.updatedCount !== undefined ? respJson.updatedCount : written.length;
+      // Valores recusados pela lista suspensa da planilha (o script devolve o motivo em "invalidos")
+      const invalidos: string[] = Array.isArray(respJson.invalidos) ? respJson.invalidos.map((s: any) => String(s)) : [];
+      const invalidIds = new Set(invalidos.map(s => s.split(" (")[0].trim()));
+      const missing = notFound.filter(id => !invalidIds.has(id));
       saveSyncConfig({ lastSyncStatus: `Sucesso (${updatedNum} itens)`, lastSyncTime: new Date().toISOString() });
       return res.json({
         success: notFound.length === 0,
@@ -981,7 +985,9 @@ app.post("/api/update-items", async (req, res) => {
         webhookUrlConfigured: true,
         message: notFound.length === 0
           ? `Alterações gravadas na planilha (${updatedNum} item(ns)).`
-          : `${updatedNum} item(ns) gravado(s); NÃO encontrados na planilha: ${notFound.join(", ")}.`
+          : `${updatedNum} item(ns) gravado(s).`
+            + (missing.length ? ` NÃO encontrados na planilha: ${missing.join(", ")}.` : "")
+            + (invalidos.length ? ` Recusados pela lista da planilha: ${invalidos.join("; ")}.` : "")
       });
     } catch (err: any) {
       console.error("Erro ao enviar para Google Apps Script Webhook:", err.message);
