@@ -966,7 +966,9 @@ app.post("/api/update-items", async (req, res) => {
       sheetCache.forEach((entry) => {
         if (!entry || !Array.isArray(entry.allRows)) return;
         for (const item of written) {
-          const rowIdx = entry.allRows.findIndex(r => r.idStock && r.idStock === item.idStock);
+          // ID repetido em mais de uma linha: usa a linha informada pelo app
+          const rowIdx = entry.allRows.findIndex(r => r.idStock && r.idStock === item.idStock
+            && (!item.sheetRowNumber || r.sheetRowNumber === item.sheetRowNumber));
           if (rowIdx !== -1) entry.allRows[rowIdx] = { ...entry.allRows[rowIdx], ...item };
         }
       });

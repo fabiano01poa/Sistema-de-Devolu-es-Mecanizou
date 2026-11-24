@@ -515,12 +515,16 @@ export default function App() {
     'notaFiscalSaida'
   ] as const;
 
+  // Mesmo ID pode estar em mais de uma linha da planilha: a linha identifica o registro
+  const rowKey = (i: { idStock: string; sheetRowNumber?: number }) => `${i.idStock}@${i.sheetRowNumber ?? ''}`;
+  const sameRow = (a: StockItem, b: StockItem) => a.idStock === b.idStock && (a.sheetRowNumber ?? 0) === (b.sheetRowNumber ?? 0);
+
   const sendWritesToSheet = async (writes: Array<Partial<StockItem> & { idStock: string }>) => {
     if (writes.length === 0) return { success: true, message: '' };
 
     // Guarda como pendente antes de enviar; sai da lista só quando a planilha confirmar
     const pending = { ...readPendingWrites() };
-    writes.forEach(w => { pending[w.idStock] = { ...(pending[w.idStock] || {}), ...w }; });
+    writes.forEach(w => { pending[rowKey(w)] = { ...(pending[rowKey(w)] || {}), ...w }; });
     savePendingWrites(pending);
 
     let result: { success: boolean; message: string; failedIds?: string[] };
@@ -538,7 +542,7 @@ export default function App() {
 
     const failed = new Set(result.failedIds || (result.success ? [] : writes.map(w => w.idStock)));
     const after = { ...readPendingWrites() };
-    writes.forEach(w => { if (!failed.has(w.idStock)) delete after[w.idStock]; });
+    writes.forEach(w => { if (!failed.has(w.idStock)) delete after[rowKey(w)]; });
     savePendingWrites(after);
 
     if (result.message) {
@@ -550,19 +554,20 @@ export default function App() {
 
   // Envia só idStock + campos que mudaram em relação ao que veio da planilha
   const syncItemsToServer = async (itemsToSync: StockItem[]) => {
-    const before = new Map(items.map(i => [i.idStock, i]));
+    const before = new Map(items.map(i => [rowKey(i), i]));
     const writes = itemsToSync
       .filter(item => item.idStock)
       .map(item => {
-        const orig = before.get(item.idStock);
-        const changed: Partial<StockItem> & { idStock: string } = { idStock: item.idStock };
+        const orig = before.get(rowKey(item));
+        // sheetRowNumber diz ao script em qual linha gravar quando o ID se repete
+        const changed: Partial<StockItem> & { idStock: string } = { idStock: item.idStock, sheetRowNumber: item.sheetRowNumber };
         SHEET_WRITABLE_FIELDS.forEach(field => {
           const next = (item[field] ?? '') as string;
           if (!orig || next !== ((orig[field] ?? '') as string)) (changed as any)[field] = next;
         });
         return changed;
       })
-      .filter(w => Object.keys(w).length > 1);
+      .filter(w => SHEET_WRITABLE_FIELDS.some(f => f in w));
     return sendWritesToSheet(writes);
   };
 
@@ -576,14 +581,14 @@ export default function App() {
   };
 
   const handleUpdateItem = (updatedItem: StockItem) => {
-    setItems(prev => prev.map(i => i.idStock === updatedItem.idStock ? updatedItem : i));
+    setItems(prev => prev.map(i => sameRow(i, updatedItem) ? updatedItem : i));
     if (detailNavList) {
-      setDetailNavList(prev => prev ? prev.map(i => i.idStock === updatedItem.idStock ? updatedItem : i) : null);
+      setDetailNavList(prev => prev ? prev.map(i => sameRow(i, updatedItem) ? updatedItem : i) : null);
     }
-    if (selectedItem?.idStock === updatedItem.idStock) {
+    if (selectedItem && sameRow(selectedItem, updatedItem)) {
       setSelectedItem(updatedItem);
     }
-    if (detailModalItem?.idStock === updatedItem.idStock) {
+    if (detailModalItem && sameRow(detailModalItem, updatedItem)) {
       setDetailModalItem(updatedItem);
     }
     syncItemsToServer([updatedItem]);
@@ -608,7 +613,7 @@ export default function App() {
     const updatedList = itemsToUpdate.map(orig => {
       // If no bulk fields were passed, the items are already pre-modified with their own individual fields
       if (!newStatus && !newObsStatusDevolucao && !newObs && !newNfSaida) {
-        updatedMap.set(orig.idStock, orig);
+        updatedMap.set(rowKey(orig), orig);
         return orig;
       }
 
@@ -646,20 +651,20 @@ export default function App() {
           ...(orig.historicoAlteracoes || [])
         ]
       };
-      updatedMap.set(orig.idStock, updated);
+      updatedMap.set(rowKey(orig), updated);
       return updated;
     });
 
-    setItems(prev => prev.map(i => updatedMap.get(i.idStock) || i));
+    setItems(prev => prev.map(i => updatedMap.get(rowKey(i)) || i));
     if (detailNavList) {
-      setDetailNavList(prev => prev ? prev.map(i => updatedMap.get(i.idStock) || i) : null);
+      setDetailNavList(prev => prev ? prev.map(i => updatedMap.get(rowKey(i)) || i) : null);
     }
 
-    if (selectedItem && updatedMap.has(selectedItem.idStock)) {
-      setSelectedItem(updatedMap.get(selectedItem.idStock)!);
+    if (selectedItem && updatedMap.has(rowKey(selectedItem))) {
+      setSelectedItem(updatedMap.get(rowKey(selectedItem))!);
     }
-    if (detailModalItem && updatedMap.has(detailModalItem.idStock)) {
-      setDetailModalItem(updatedMap.get(detailModalItem.idStock)!);
+    if (detailModalItem && updatedMap.has(rowKey(detailModalItem))) {
+      setDetailModalItem(updatedMap.get(rowKey(detailModalItem))!);
     }
 
     syncItemsToServer(updatedList);
@@ -905,7 +910,7 @@ export default function App() {
               <AlertTriangle className={`w-4 h-4 flex-shrink-0 ${isLight ? 'text-red-600' : 'text-red-400'}`} />
               <span>
                 {Object.keys(pendingWrites).length} alteração(ões) NÃO chegaram à planilha
-                ({Object.keys(pendingWrites).slice(0, 3).join(', ')}{Object.keys(pendingWrites).length > 3 ? '…' : ''}).
+                ({(Object.values(pendingWrites) as Array<{ idStock: string }>).slice(0, 3).map(w => w.idStock).join(', ')}{Object.keys(pendingWrites).length > 3 ? '…' : ''}).
                 A tela mostra os dados da planilha.
               </span>
             </div>
